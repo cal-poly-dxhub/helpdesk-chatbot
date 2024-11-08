@@ -6,6 +6,7 @@ import re
 from os_query import getSimilarDocs
 from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
+from botocore.exceptions import ClientError
 
 def main():
 
@@ -64,7 +65,7 @@ def main():
 
     if st.session_state.diagnoseMode:
         if prompt := st.chat_input('How can I help you today?'):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            #st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
             passage = json.loads(st.session_state.selectedIssue['_source']['passage'])
@@ -77,7 +78,7 @@ def main():
              documents found. Consider seeking further assistance from a help desk associate.""")
     else:
         if prompt := st.chat_input('How can I help you today?'):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            #st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
             invokeModel(prompt)
@@ -99,50 +100,52 @@ def invokeModel(prompt, extraInstructions=""):
     client = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
     model_id = "anthropic.claude-3-sonnet-20240229-v1:0"
 
-    chatHistory = ""
-    for m in st.session_state.messages:
-        chatHistory += f"{m['role']} : {m['content']}\n"
+    # Initialize an empty conversation history
+    conversation_history = []
 
-    adminContent = [{"type": "text", "text": f"{extraInstructions} \n Chat History: {chatHistory}"}]
-    userContent = [{"type": "text", "text": f"{prompt}"}]
+    def generate_response(user_input):
+        # Append user's input to conversation history
+        conversation_history.append({"role": "user", "content": [{"text": user_input}]})
+        st.session_state.messages.append({"role": "user", "content": user_input})
 
-    native_request = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1000,
-        "temperature": 0.7,
-        "messages": [
-            {
-                "role": "user",
-                "content": f"Administrator: {adminContent} User: {userContent} Assistant:"
-            }
-        ],
-    }
-    
-    request = json.dumps(native_request)
-    streaming_response = client.invoke_model_with_response_stream(
-        modelId=model_id, body=request
-    )
+        try:
+            # Send the conversation history to the model using ConverseStream
+            streaming_response = client.converse_stream(
+                modelId=model_id,
+                messages=conversation_history,
+                inferenceConfig={"maxTokens": 512, "temperature": 0.5, "topP": 0.9},
+            )
 
-    # Generator function to yield text chunks for `st.write_stream`
-    def generate_response():
-        full_response = ""
-        for event in streaming_response["body"]:
-            chunk = json.loads(event["chunk"]["bytes"].decode('utf-8'))
-            if chunk["type"] == "content_block_delta":
-                text_delta = chunk["delta"].get("text", "")
-                full_response += text_delta
-                yield text_delta  # Yielding for streaming
+            response_text = ""
+            # Yield each chunk of text as it arrives
+            for chunk in streaming_response['stream']:
+                if 'contentBlockDelta' in chunk:
+                    text = chunk['contentBlockDelta']['delta']['text']
+                    yield text  # Yield each chunk of text immediately
+                    response_text += text
 
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
-        if "Identified the issue -" in full_response:
-            st.session_state.issueFound = True
-            findRelevantIssue(prompt)
-        
+            # Add the model's response to the conversation history
+            conversation_history.append({"role": "assistant", "content": [{"text": response_text}]})
+            st.session_state.messages.append({"role": "assistant", "content": [{"text": response_text}]})
+
+            return response_text
+            # st.session_state.messages.append({"role": "assistant", "content": full_response})
+            # if "Identified the issue -" in full_response:
+            #     st.session_state.issueFound = True
+            #     findRelevantIssue(prompt)
+
+        except (ClientError, Exception) as e:
+            print(f"\nERROR: Unable to invoke '{model_id}'. Reason: {e}")
+
 
     with st.chat_message("assistant"):
-        st.write_stream(generate_response())
+        fullResponse = "".join(st.write_stream(generate_response(prompt)))
+
+    # with st.chat_message("user"):
+    #     st.write(full_response)
+
+    print(fullResponse)
     
-    fullResponse = st.session_state.messages[-1]['content']
     if st.session_state.diagnoseMode:
         image_dict = st.session_state.selectedIssue["_source"]["images"]
         fullResponse = replace_uuid_with_base64(fullResponse, image_dict)
@@ -150,7 +153,6 @@ def invokeModel(prompt, extraInstructions=""):
         
         for image_base64 in images:
             image = decode_base64_to_image(image_base64)
-            st.session_state.messages.append({"role": "Administrator", "content": image})
             st.image(image)
 
 
