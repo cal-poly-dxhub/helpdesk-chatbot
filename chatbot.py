@@ -6,6 +6,13 @@ import re
 from os_query import getSimilarDocs
 from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
+import tiktoken
+from summary_utils import generate_summary
+
+tokenizer = tiktoken.get_encoding("o200k_base")
+
+SONNET_INPUT_COST_PER_TOKEN = 0.000003
+SONNET_OUTPUT_COST_PER_TOKEN = 0.000015
 
 def main():
 
@@ -16,6 +23,9 @@ def main():
 
     if "issueFound" not in st.session_state:
         st.session_state.issueFound = False
+
+    if "issueResolved" not in st.session_state:
+        st.session_state.issueResolved = False
 
     if "first_interaction" not in st.session_state:
         st.session_state.first_interaction = True
@@ -34,6 +44,17 @@ def main():
 
     if "diagnoseMode" not in st.session_state:
         st.session_state.diagnoseMode = False
+
+    if "input_tokens" not in st.session_state:
+        st.session_state.input_tokens = 0
+
+    if "output_tokens" not in st.session_state:
+        st.session_state.output_tokens = 0
+
+    if "total_cost" not in st.session_state:
+        st.session_state.total_cost = 0
+
+    
 
 
     for message in st.session_state.messages:
@@ -72,6 +93,12 @@ def main():
 
             invokeModel(prompt, f"[{passage}]")
 
+    elif st.session_state.issueResolved:
+        #TODO: Display token counts, and cost, and summary report for help desk at end
+        summary = generate_summary(str(st.session_state.messages))
+        print(summary)
+
+
     elif st.session_state.no_similar_issues:
         st.write(f"""There were no similar help desk issue
              documents found. Consider seeking further assistance from a help desk associate.""")
@@ -97,7 +124,7 @@ def invokeModel(prompt, extraInstructions=""):
         aws_session_token=credentials['SessionToken']  
     )  
     client = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
-    model_id = "anthropic.claude-3-sonnet-20240229-v1:0"
+    model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
     chatHistory = ""
     for m in st.session_state.messages:
@@ -119,6 +146,9 @@ def invokeModel(prompt, extraInstructions=""):
     }
     
     request = json.dumps(native_request)
+    tokens = len(tokenizer.encode(request))
+    st.session_state.input_tokens += tokens
+
     streaming_response = client.invoke_model_with_response_stream(
         modelId=model_id, body=request
     )
@@ -154,6 +184,21 @@ def invokeModel(prompt, extraInstructions=""):
         st.write_stream(generate_response())
     
     fullResponse = st.session_state.messages[-1]['content']
+
+    if "Issue Resolved" in fullResponse:
+        st.session_state.diagnoseMode = False
+        st.session_state.issueResolved = True
+        st.session_state.first_interaction = False
+        st.rerun()
+    
+    tokens = len(tokenizer.encode(fullResponse))
+    st.session_state.output_tokens += tokens
+
+    st.session_state.total_cost += (
+        st.session_state.input_tokens * SONNET_INPUT_COST_PER_TOKEN + 
+        st.session_state.output_tokens * SONNET_OUTPUT_COST_PER_TOKEN
+    )
+
     if st.session_state.diagnoseMode:
         image_dict = st.session_state.selectedIssue["_source"]["images"]
         fullResponse = replace_uuid_with_base64(fullResponse, image_dict)
