@@ -4,6 +4,7 @@ import json
 import base64
 import re
 from os_query import getSimilarDocs
+from streamlit_star_rating import st_star_rating
 from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
 import tiktoken
@@ -94,9 +95,11 @@ def main():
             invokeModel(prompt, f"[{passage}]")
 
     elif st.session_state.issueResolved:
-        #TODO: Display token counts, and cost, and summary report for help desk at end
-        summary = generate_summary(str(st.session_state.messages))
-        print(summary)
+        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
+        feedback = st.text_input("Give me some quick feedback!")
+        if st.button("Complete"):
+            summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
+            st.markdown(f"To the helpdesk:\n{summary} \nInput Tokens: {st.session_state.input_tokens}\nOutput Tokens: {st.session_state.output_tokens}\nTotal Cost: {st.session_state.total_cost}")
 
 
     elif st.session_state.no_similar_issues:
