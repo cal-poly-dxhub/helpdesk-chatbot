@@ -99,7 +99,7 @@ def main():
         feedback = st.text_input("Give me some quick feedback!")
         if st.button("Complete"):
             summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
-            st.markdown(f"To the helpdesk:\n{summary} \nInput Tokens: {st.session_state.input_tokens}\nOutput Tokens: {st.session_state.output_tokens}\nTotal Cost: {st.session_state.total_cost}")
+            st.markdown(f"To the helpdesk:\n{summary} \n\nInput Tokens: {st.session_state.input_tokens}\n\nOutput Tokens: {st.session_state.output_tokens}\n\nTotal Cost: ${st.session_state.total_cost}")
 
 
     elif st.session_state.no_similar_issues:
@@ -164,13 +164,16 @@ def invokeModel(prompt, extraInstructions=""):
             chunk = json.loads(event["chunk"]["bytes"].decode('utf-8'))
             if chunk["type"] == "content_block_delta":
                 text_delta = chunk["delta"].get("text", "")
+                print(text_delta)
                 full_response += text_delta
                 uuid = re.search(r"\{([a-zA-Z0-9]{8})\}", full_response)
                 if "(" in text_delta:
+                    text_delta = text_delta.split("(")[0]
+                    yield text_delta
                     show_text = False
                 if ")" in text_delta:
                     show_text = True
-                    text_delta = text_delta[1:]
+                    text_delta = text_delta.split(")")[1]
                 if uuid:
                     full_response = full_response.replace(uuid.group(1), "")
                     
