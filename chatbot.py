@@ -8,7 +8,6 @@ from streamlit_star_rating import st_star_rating
 from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
 import tiktoken
-from summary_utils import generate_summary
 
 tokenizer = tiktoken.get_encoding("o200k_base")
 
@@ -27,6 +26,9 @@ def main():
 
     if "issueResolved" not in st.session_state:
         st.session_state.issueResolved = False
+
+    if "humanRedirect" not in st.session_state:
+        st.session_state.humanRedirect = False
 
     if "first_interaction" not in st.session_state:
         st.session_state.first_interaction = True
@@ -54,6 +56,15 @@ def main():
 
     if "total_cost" not in st.session_state:
         st.session_state.total_cost = 0
+
+    if "inputSummaryTokens" not in st.session_state:
+        st.session_state.inputSummaryTokens = 0
+
+    if "outputSummaryTokens" not in st.session_state:
+        st.session_state.outputSummaryTokens = 0
+
+    if "summaryCost" not in st.session_state:
+        st.session_state.summaryCost = 0
 
     
 
@@ -98,13 +109,21 @@ def main():
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
         feedback = st.text_input("Give me some quick feedback!")
         if st.button("Complete"):
+            st.markdown(f"Input Tokens: {st.session_state.input_tokens}  \nOutput Tokens: {st.session_state.output_tokens}  \nTotal Cost: {st.session_state.total_cost}")
+
+    elif st.session_state.humanRedirect:
+        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
+        feedback = st.text_input("Give me some quick feedback!")
+        if st.button("Complete"):
             summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
-            st.markdown(f"To the helpdesk:\n{summary} \n\nInput Tokens: {st.session_state.input_tokens}\n\nOutput Tokens: {st.session_state.output_tokens}\n\nTotal Cost: ${st.session_state.total_cost}")
+            st.write(f"""To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
+                     {st.session_state.output_tokens}  \nConversation Total Cost: {st.session_state.total_cost}  \nSummary Input Tokens: 
+                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: {st.session_state.summaryCost}""")
 
 
     elif st.session_state.no_similar_issues:
         st.write(f"""There were no similar help desk issue
-             documents found. Consider seeking further assistance from a help desk associate.""")
+             documents found. Redirecting you to a help desk associate.""")
     else:
         if prompt := st.chat_input('How can I help you today?'):
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -165,17 +184,19 @@ def invokeModel(prompt, extraInstructions=""):
             if chunk["type"] == "content_block_delta":
                 text_delta = chunk["delta"].get("text", "")
                 print(text_delta)
+                print(text_delta)
                 full_response += text_delta
-                uuid = re.search(r"\{([a-zA-Z0-9]{8})\}", full_response)
-                if "(" in text_delta:
-                    text_delta = text_delta.split("(")[0]
-                    yield text_delta
-                    show_text = False
-                if ")" in text_delta:
-                    show_text = True
-                    text_delta = text_delta.split(")")[1]
-                if uuid:
-                    full_response = full_response.replace(uuid.group(1), "")
+                # uuid = re.search(r"\{([a-zA-Z0-9]{8})\}", full_response)
+                # if "(" in text_delta:
+                #     text_delta = text_delta.split("(")[0]
+                #     yield text_delta
+                #     show_text = False
+                # if ")" in text_delta:
+                #     show_text = True
+                #     text_delta = text_delta[1:]
+                #     text_delta = text_delta.split(")")[1]
+                # if uuid:
+                #     full_response = full_response.replace(uuid.group(1), "")
                     
                 if show_text:
                     yield text_delta  # Yielding for streaming
@@ -194,6 +215,12 @@ def invokeModel(prompt, extraInstructions=""):
     if "Issue Resolved" in fullResponse:
         st.session_state.diagnoseMode = False
         st.session_state.issueResolved = True
+        st.session_state.first_interaction = False
+        st.rerun()
+    
+    if "Redirecting to human" in fullResponse:
+        st.session_state.diagnoseMode = False
+        st.session_state.humanRedirect = True
         st.session_state.first_interaction = False
         st.rerun()
     
@@ -278,6 +305,54 @@ def diagnoseIssue(issue):
     st.session_state.first_interaction = True 
     st.session_state.selectedIssue = issue
     st.rerun()
+
+
+
+def generate_summary(document_text):
+    role_to_assume = 'aws_account_arn'    
+
+    prompt = """
+    Summarize key points of the above conversation. Be concise.
+    """
+
+    prompt += document_text
+
+    # Use STS to assume role  
+    credentials = boto3.client('sts').assume_role(  
+        RoleArn=role_to_assume,  
+        RoleSessionName='RoleBSession'  
+    )['Credentials']  
+
+    # Create Bedrock client with temporary credentials  
+    bedrock_session = boto3.session.Session(  
+        aws_access_key_id=credentials['AccessKeyId'],  
+        aws_secret_access_key=credentials['SecretAccessKey'],  
+        aws_session_token=credentials['SessionToken']  
+    )  
+
+    bedrock = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
+
+    body = json.dumps({
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": prompt}],
+    "anthropic_version": "bedrock-2023-05-31"
+    })
+
+    tokens = len(tokenizer.encode(body))
+    st.session_state.inputSummaryTokens += tokens
+
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
+
+    response_body = json.loads(response.get("body").read())
+    text = response_body.get("content")[0].get("text")
+    tokens = len(tokenizer.encode(text))
+    st.session_state.outputSummaryTokens += tokens
+    st.session_state.summaryCost += (
+        st.session_state.inputSummaryTokens * SONNET_INPUT_COST_PER_TOKEN + 
+        st.session_state.outputSummaryTokens * SONNET_OUTPUT_COST_PER_TOKEN
+    )
+    return text
+
 
 
 if __name__ == "__main__":
