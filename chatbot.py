@@ -109,7 +109,8 @@ def main():
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
         feedback = st.text_input("Give me some quick feedback!")
         if st.button("Complete"):
-            st.markdown(f"Input Tokens: {st.session_state.input_tokens}  \nOutput Tokens: {st.session_state.output_tokens}  \nTotal Cost: {st.session_state.total_cost}")
+            st.write(f"""Input Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
+                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}                      """)
 
     elif st.session_state.humanRedirect:
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
@@ -117,8 +118,10 @@ def main():
         if st.button("Complete"):
             summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
             st.write(f"""To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
-                     {st.session_state.output_tokens}  \nConversation Total Cost: {st.session_state.total_cost}  \nSummary Input Tokens: 
-                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: {st.session_state.summaryCost}""")
+                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nSummary Input Tokens: 
+                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: \${round(st.session_state.summaryCost, 4)}
+                     \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.summaryCost, 4)}
+                     """)
 
 
     elif st.session_state.no_similar_issues:
@@ -183,8 +186,6 @@ def invokeModel(prompt, extraInstructions=""):
             chunk = json.loads(event["chunk"]["bytes"].decode('utf-8'))
             if chunk["type"] == "content_block_delta":
                 text_delta = chunk["delta"].get("text", "")
-                print(text_delta)
-                print(text_delta)
                 full_response += text_delta
                 # uuid = re.search(r"\{([a-zA-Z0-9]{8})\}", full_response)
                 # if "(" in text_delta:
@@ -219,6 +220,12 @@ def invokeModel(prompt, extraInstructions=""):
         st.rerun()
     
     if "Redirecting to human" in fullResponse:
+        st.session_state.diagnoseMode = False
+        st.session_state.humanRedirect = True
+        st.session_state.first_interaction = False
+        st.rerun()
+
+    if "Redirect to service desk" in fullResponse:
         st.session_state.diagnoseMode = False
         st.session_state.humanRedirect = True
         st.session_state.first_interaction = False
