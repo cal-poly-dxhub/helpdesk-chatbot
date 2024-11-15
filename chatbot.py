@@ -1,7 +1,6 @@
 import streamlit as st
 import boto3
 import json
-import base64
 import re
 from os_query import getSimilarDocs
 from streamlit_star_rating import st_star_rating
@@ -13,6 +12,8 @@ tokenizer = tiktoken.get_encoding("o200k_base")
 
 SONNET_INPUT_COST_PER_TOKEN = 0.000003
 SONNET_OUTPUT_COST_PER_TOKEN = 0.000015
+HAIKU_INPUT_COST_PER_TOKEN = 0.00000025
+HAIKU_OUTPUT_COST_PER_TOKEN = 0.00000125
 
 def main():
 
@@ -66,6 +67,23 @@ def main():
     if "summaryCost" not in st.session_state:
         st.session_state.summaryCost = 0
 
+    if "inputFlagTokens" not in st.session_state:
+        st.session_state.inputFlagTokens = 0
+
+    if "outputFlagTokens" not in st.session_state:
+        st.session_state.outputFlagTokens = 0
+
+    if "flagRaiserCost" not in st.session_state:
+        st.session_state.flagRaiserCost = 0
+
+    if "redirectRequests" not in st.session_state:
+        st.session_state.redirectRequests = 0
+
+    if "tooHighCost" not in st.session_state:
+        st.session_state.tooHighCost = False
+
+    if "costWarningHappened" not in st.session_state:
+        st.session_state.costWarningHappened = False
     
 
 
@@ -76,7 +94,19 @@ def main():
         else:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
+    
 
+    print(st.session_state.total_cost)
+    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= 0.5) and not (st.session_state.costWarningHappened)):
+        st.toast('This conversation is starting to take a long time. Consider speaking to a help desk associate.', icon="⚠️")
+        st.session_state.costWarningHappened = True
+    
+    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= 0.0015) and not (st.session_state.humanRedirect)):
+        st.session_state.tooHighCost = True
+        st.session_state.diagnoseMode = False
+        st.session_state.humanRedirect = True
+        st.session_state.first_interaction = False
+        st.rerun()
 
 
     if st.session_state.first_interaction:
@@ -110,17 +140,24 @@ def main():
         feedback = st.text_input("Give me some quick feedback!")
         if st.button("Complete"):
             st.write(f"""Input Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
-                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}                      """)
+                     {st.session_state.output_tokens}  \nConversation Total Cost: ${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
+                     {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: ${round(st.session_state.flagRaiserCost, 4)}
+                     \nTotal Cost: ${round(st.session_state.total_cost + st.session_state.flagRaiserCost, 4)}""")
 
     elif st.session_state.humanRedirect:
+        if st.session_state.tooHighCost:
+            st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
         feedback = st.text_input("Give me some quick feedback!")
         if st.button("Complete"):
-            summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
+            with st.spinner("Generating Summary..."):
+                summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
             st.write(f"""To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
-                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nSummary Input Tokens: 
-                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: \${round(st.session_state.summaryCost, 4)}
-                     \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.summaryCost, 4)}
+                     {st.session_state.output_tokens}  \nConversation Total Cost: ${round(st.session_state.total_cost, 4)}  \nSummary Input Tokens: 
+                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: ${round(st.session_state.summaryCost, 4)}
+                         \nFlag Check Input Tokens: 
+                     {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: ${round(st.session_state.flagRaiserCost, 4)}  
+                     \nTotal Cost: ${round(st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost, 4)}
                      """)
 
 
@@ -213,22 +250,22 @@ def invokeModel(prompt, extraInstructions=""):
     
     fullResponse = st.session_state.messages[-1]['content']
 
-    if "Issue Resolved" in fullResponse:
+    flag = flagRaiser(fullResponse)
+
+    print(f"\n{flag=}")
+
+    if "Issue Resolved" in flag:
         st.session_state.diagnoseMode = False
         st.session_state.issueResolved = True
         st.session_state.first_interaction = False
         st.rerun()
     
-    if "Redirecting to human" in fullResponse:
-        st.session_state.diagnoseMode = False
-        st.session_state.humanRedirect = True
-        st.session_state.first_interaction = False
-        st.rerun()
-
-    if "Redirect to service desk" in fullResponse:
-        st.session_state.diagnoseMode = False
-        st.session_state.humanRedirect = True
-        st.session_state.first_interaction = False
+    if "Redirect request" in flag:
+        st.session_state.redirectRequests += 1
+        if st.session_state.redirectRequests >= 2:
+            st.session_state.diagnoseMode = False
+            st.session_state.humanRedirect = True
+            st.session_state.first_interaction = False
         st.rerun()
     
     tokens = len(tokenizer.encode(fullResponse))
@@ -315,11 +352,61 @@ def diagnoseIssue(issue):
 
 
 
+def flagRaiser(lastMessage):
+    role_to_assume = 'aws_account_arn'    
+
+    prompt = f"""
+    Take a look at this message. If the message indicates that they want to speak to a human,
+    say the string: "Redirect request". If the message indicates that the issue has been resolveed,
+    say the string: "Issue Resolved". If the message does not indicate either of these situations,
+    say the string: "NA". Return nothing but the resulting string. Here is the message: {lastMessage}
+    """
+
+    # Use STS to assume role  
+    credentials = boto3.client('sts').assume_role(  
+        RoleArn=role_to_assume,  
+        RoleSessionName='RoleBSession'  
+    )['Credentials']  
+
+    # Create Bedrock client with temporary credentials  
+    bedrock_session = boto3.session.Session(  
+        aws_access_key_id=credentials['AccessKeyId'],  
+        aws_secret_access_key=credentials['SecretAccessKey'],  
+        aws_session_token=credentials['SessionToken']  
+    )  
+
+    bedrock = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
+
+    body = json.dumps({
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": prompt}],
+    "anthropic_version": "bedrock-2023-05-31"
+    })
+
+    tokens = len(tokenizer.encode(body))
+    st.session_state.inputFlagTokens += tokens
+
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
+
+    response_body = json.loads(response.get("body").read())
+    text = response_body.get("content")[0].get("text")
+    tokens = len(tokenizer.encode(text))
+    st.session_state.outputFlagTokens += tokens
+    st.session_state.flagRaiserCost += (
+        st.session_state.inputFlagTokens * HAIKU_INPUT_COST_PER_TOKEN + 
+        st.session_state.outputFlagTokens * HAIKU_OUTPUT_COST_PER_TOKEN
+    )
+    return text
+
+
+
+
 def generate_summary(document_text):
     role_to_assume = 'aws_account_arn'    
 
     prompt = """
-    Summarize key points of the above conversation. Be concise.
+    Summarize key points of the above conversation. The summary should include a 
+    description of the issue and how the issue was handled. Be concise.
     """
 
     prompt += document_text
@@ -359,6 +446,8 @@ def generate_summary(document_text):
         st.session_state.outputSummaryTokens * SONNET_OUTPUT_COST_PER_TOKEN
     )
     return text
+
+
 
 
 
