@@ -7,6 +7,7 @@ from streamlit_star_rating import st_star_rating
 from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
 import tiktoken
+from llm_utils import *
 
 tokenizer = tiktoken.get_encoding("o200k_base")
 
@@ -15,9 +16,52 @@ SONNET_OUTPUT_COST_PER_TOKEN = 0.000015
 HAIKU_INPUT_COST_PER_TOKEN = 0.00000025
 HAIKU_OUTPUT_COST_PER_TOKEN = 0.00000125
 
+# Dollar amounts for handling long conversations
+WARNING_THRESHOLD = 0.5
+TERMINATE_THRESHOLD = 1
+
+# Number of times a user must ask for a human to be redirected
+HUMAN_REDIRECT_THRESHOLD = 2
+
+CURRENT_CHATBOT = "IT Helpdesk"
+helpdesk_list = [
+        "IT Helpdesk",
+        "Farm Service Agency Helpdesk",
+        "Forest Service Helpdesk"
+]
+
+helpdesk_info = [
+    "IT Helpdesk - Helpdesk dealing with technological issues",
+    "Farm Service Agency Helpdesk - The Farm Service Agency implements agricultural policy, administers credit and loan programs, and manages conservation, commodity, disaster and farm marketing programs through a national network of offices.",
+    "Forest Service Helpdesk - FS sustains the health, diversity and productivity of the Nation's forests and grasslands to meet the needs of present and future generations."
+]
+
+
 def main():
 
     st.title("USDA Help Desk Chatbot")
+
+    
+
+    # True means the service is working
+    services_status = {
+        "Tier One Helpdesk": True,
+        "Tier Two Helpdesk": False,
+    }
+
+    def status_indicator(is_up):
+        if is_up:
+            return ":large_green_circle:"
+        else:
+            return ":red_circle:"
+
+    # Sidebar
+    st.sidebar.title("Service Status")
+
+    for service, status in services_status.items():
+        indicator = status_indicator(status)
+        status_text = "In Service" if status else "Out of Service"
+        st.sidebar.markdown(f"{indicator} **{service}** - {status_text}")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -84,8 +128,6 @@ def main():
 
     if "costWarningHappened" not in st.session_state:
         st.session_state.costWarningHappened = False
-    
-
 
     for message in st.session_state.messages:
         if message['role'] == "Administrator":
@@ -97,16 +139,29 @@ def main():
     
 
     print(st.session_state.total_cost)
-    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= 0.5) and not (st.session_state.costWarningHappened)):
+    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= WARNING_THRESHOLD) and not (st.session_state.costWarningHappened)):
         st.toast('This conversation is starting to take a long time. Consider speaking to a help desk associate.', icon="⚠️")
         st.session_state.costWarningHappened = True
     
-    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= 0.0015) and not (st.session_state.humanRedirect)):
+    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= TERMINATE_THRESHOLD) and not (st.session_state.humanRedirect)):
         st.session_state.tooHighCost = True
         st.session_state.diagnoseMode = False
         st.session_state.humanRedirect = True
         st.session_state.first_interaction = False
         st.rerun()
+
+    # CODE to handle redirects for now
+    # user_message = str(st.session_state.messages)
+    # st.session_state.input_tokens += len(tokenizer.encode(user_message))
+
+    # redirect_info = decide_redirect(str(user_message), CURRENT_CHATBOT)
+    # helpdesk = re.search(r"<helpdesk>(.*?)</helpdesk>", redirect_info).group(1)
+
+    # st.session_state.output_tokens += len(tokenizer.encode(redirect_info))
+
+    # if helpdesk in helpdesk_list and helpdesk != CURRENT_CHATBOT:
+    #     reasoning = re.search(r"<reasoning>(.*?)</reasoning>", redirect_info).group(1)
+    #     st.write(f"Redirecting to the {helpdesk}. {reasoning}")
 
 
     if st.session_state.first_interaction:
@@ -132,7 +187,6 @@ def main():
                 st.markdown(prompt)
             passage = json.loads(st.session_state.selectedIssue['_source']['passage'])
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
-
             invokeModel(prompt, f"[{passage}]")
 
     elif st.session_state.issueResolved:
@@ -153,11 +207,11 @@ def main():
             with st.spinner("Generating Summary..."):
                 summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
             st.write(f"""To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
-                     {st.session_state.output_tokens}  \nConversation Total Cost: ${round(st.session_state.total_cost, 4)}  \nSummary Input Tokens: 
-                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: ${round(st.session_state.summaryCost, 4)}
+                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \n\nSummary Input Tokens: 
+                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: \${round(st.session_state.summaryCost, 4)}
                          \nFlag Check Input Tokens: 
-                     {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: ${round(st.session_state.flagRaiserCost, 4)}  
-                     \nTotal Cost: ${round(st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost, 4)}
+                     {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}  
+                     \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost, 4)}
                      """)
 
 
@@ -243,30 +297,37 @@ def invokeModel(prompt, extraInstructions=""):
         if "Identified the issue -" in full_response:
             st.session_state.issueFound = True
             findRelevantIssue(prompt)
-        
 
     with st.chat_message("assistant"):
         st.write_stream(generate_response())
     
     fullResponse = st.session_state.messages[-1]['content']
 
-    flag = flagRaiser(fullResponse)
+    if st.session_state.diagnoseMode:
+        flag = flagRaiser(prompt, fullResponse)
 
-    print(f"\n{flag=}")
+        print(f"\n{flag=}")
 
-    if "Issue Resolved" in flag:
-        st.session_state.diagnoseMode = False
-        st.session_state.issueResolved = True
-        st.session_state.first_interaction = False
-        st.rerun()
-    
-    if "Redirect request" in flag:
-        st.session_state.redirectRequests += 1
-        if st.session_state.redirectRequests >= 2:
+        if "Issue Resolved" in flag:
+            st.session_state.diagnoseMode = False
+            st.session_state.issueResolved = True
+            st.session_state.first_interaction = False
+            st.rerun()
+        
+        if "Human request" in flag:
+            st.session_state.redirectRequests += 1
+            if st.session_state.redirectRequests >= 2:
+                st.session_state.diagnoseMode = False
+                st.session_state.humanRedirect = True
+                st.session_state.first_interaction = False
+            st.rerun()
+
+        if "Redirect request" in flag:
             st.session_state.diagnoseMode = False
             st.session_state.humanRedirect = True
             st.session_state.first_interaction = False
-        st.rerun()
+            st.rerun()
+
     
     tokens = len(tokenizer.encode(fullResponse))
     st.session_state.output_tokens += tokens
@@ -352,14 +413,20 @@ def diagnoseIssue(issue):
 
 
 
-def flagRaiser(lastMessage):
+def flagRaiser(user_query, lastMessage):
     role_to_assume = 'aws_account_arn'    
 
     prompt = f"""
-    Take a look at this message. If the message indicates that they want to speak to a human,
-    say the string: "Redirect request". If the message indicates that the issue has been resolveed,
-    say the string: "Issue Resolved". If the message does not indicate either of these situations,
-    say the string: "NA". Return nothing but the resulting string. Here is the message: {lastMessage}
+    Take a look at this message. 
+    If the user is asking to speak to a human,
+    say the string: "Human request". 
+    If the message indicates the bot cannot help the user anymore,
+    say the string: "Redirect request". 
+    If the message indicates that the issue has been resolved and help is no longer needed,
+    say the string: "Issue Resolved". 
+    If the message does not indicate either of these situations,
+    say the string: "NA". Return nothing but the resulting string. 
+    Here is the message: User: {user_query} Chatbot: {lastMessage}
     """
 
     # Use STS to assume role  
@@ -386,7 +453,8 @@ def flagRaiser(lastMessage):
     tokens = len(tokenizer.encode(body))
     st.session_state.inputFlagTokens += tokens
 
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
+    #response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
 
     response_body = json.loads(response.get("body").read())
     text = response_body.get("content")[0].get("text")
