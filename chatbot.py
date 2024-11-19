@@ -186,6 +186,10 @@ def main():
     elif st.session_state.issueResolved:
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
         feedback = st.text_input("Give me some quick feedback!")
+
+        categories = ["Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website"]
+        selected_category = st.selectbox("Select a category:", categories)
+
         if st.button("Complete"):
             st.write(f"""Input Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
                      {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
@@ -197,6 +201,10 @@ def main():
             st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
         feedback = st.text_input("Give me some quick feedback!")
+
+        categories = ["Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website"]
+        selected_category = st.selectbox("Select a category:", categories)
+
         if st.button("Complete"):
             with st.spinner("Generating Summary..."):
                 summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
