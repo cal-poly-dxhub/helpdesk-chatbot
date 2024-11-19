@@ -1,7 +1,7 @@
 import boto3
 import json
 
-def decide_redirect(conversation, current_helpdesk):
+def decide_redirect(conversation, current_helpdesk, helpdesk_info):
     role_to_assume = 'aws_account_arn'    
 
     prompt = f"""
@@ -10,7 +10,10 @@ def decide_redirect(conversation, current_helpdesk):
 
     The current helpdesk is {current_helpdesk}
 
-    Respond in this format: 
+    Here are the avaible helpdesks to choose from: {helpdesk_info}
+
+    Put ONLY the exact name of the helpdesk in the helpdesk tags.
+    Respond in this format:
     <reasoning>Why you chose that helpdesk</reasoning>
     <helpdesk>NAME_OF_HELPDESK</helpdesk>
 
@@ -39,7 +42,7 @@ def decide_redirect(conversation, current_helpdesk):
     "anthropic_version": "bedrock-2023-05-31"
     })
 
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
 
     response_body = json.loads(response.get("body").read())
     return response_body.get("content")[0].get("text")
