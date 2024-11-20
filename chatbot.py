@@ -161,19 +161,31 @@ def main():
     st.sidebar.title("Service Status")
     st.sidebar.write(f"Current Helpdesk: {st.session_state.currentHelpdesk}")
 
-    
+    st.sidebar.write("   \n")    
     for service, status in services_status.items():
         indicator = status_indicator(status)
         status_text = "In Service" if status else "Out of Service"
         st.sidebar.markdown(f"{indicator} **{service}** - {status_text}")
-    st.sidebar.write(f"Total Conversation Cost: {st.session_state.total_cost}")
-    st.session_state.warningThreshold = st.sidebar.slider("Set the cost warning threshold",.1,100.0,.1)
+
+    st.sidebar.write("   \n")    
+    st.sidebar.write("   \n")    
+
+    st.sidebar.write(f"Total Conversation Cost: {round(st.session_state.total_cost,4)}")
+    st.sidebar.write("   \n")    
+    st.sidebar.write("   \n")    
+
+
+    st.session_state.warningThreshold = st.sidebar.slider(label="Set the cost warning threshold",min_value=0.1,max_value=100.0,step=.1,value=10.0)
     st.session_state.warningThreshold /= 100
-    st.sidebar.write(f"Current Warning Threshold: {st.session_state.warningThreshold}")
-    st.session_state.terminateThreshold = st.sidebar.slider("Set the cost terminate threshold",0.2,150.0,.1)
+    st.sidebar.write(f"Current Warning Threshold: {round(st.session_state.warningThreshold,4)}")
+    st.sidebar.write("   \n")    
+
+    st.session_state.terminateThreshold = st.sidebar.slider(label="Set the cost terminate threshold",min_value=0.2,max_value=150.0,step=.1,value=45.0)
     st.session_state.terminateThreshold /= 100
-    st.sidebar.write(f"Current Terminate Threshold: {st.session_state.terminateThreshold}")
-    st.session_state.humanRedirectThreshold = st.sidebar.slider("Set the human redirect threshold",1,5,1)
+    st.sidebar.write(f"Current Terminate Threshold: {round(st.session_state.terminateThreshold,4)}")
+    st.sidebar.write("   \n")    
+
+    st.session_state.humanRedirectThreshold = st.sidebar.slider(label="Set the human redirect threshold",min_value=1,max_value=5,step=1,value=2)
     if st.sidebar.button("Reset App"):
         reset_session()
 
@@ -476,17 +488,17 @@ def flagRaiser(user_query, lastMessage):
     role_to_assume = 'aws_account_arn'    
 
     prompt = f"""
-    Take a look at the attached message. 
-    If the user is asking to speak to a human,
-    say the string: "Human request". 
-    If the message indicates the bot cannot help the user anymore,
-    say the string: "Redirect request". 
-    If the message indicates that the issue has been resolved,
-    say the string: "Issue Resolved". 
-    If the message does not indicate either of these situations,
-    say the string: "NA". Return nothing but the resulting string. 
-    Here is the message: {lastMessage}
+    Evaluate the content of the provided messages carefully. 
+    Based on the following criteria, respond only with the exact matching string (without any additional text or explanation):
+    - If the *User's message* explicitly requests to speak to a human, respond with: "Human request".
+    - If the *User's message* or *System's message* suggests that the bot cannot assist the user any further, respond with: "Redirect request".
+    - If the *User's message* or *System's message* indicates that the user's issue has been resolved, respond with: "Issue Resolved".
+    - If neither message matches any of the above conditions, respond with: "NA".
+
+    User's message to evaluate: {user_query}
+    System's message to evaluate: {lastMessage}
     """
+
 
     # Use STS to assume role  
     credentials = boto3.client('sts').assume_role(  
