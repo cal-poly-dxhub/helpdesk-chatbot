@@ -16,14 +16,7 @@ SONNET_OUTPUT_COST_PER_TOKEN = 0.000015
 HAIKU_INPUT_COST_PER_TOKEN = 0.00000025
 HAIKU_OUTPUT_COST_PER_TOKEN = 0.00000125
 
-# Dollar amounts for handling long conversations
-WARNING_THRESHOLD = 0.5
-TERMINATE_THRESHOLD = 1
 
-# Number of times a user must ask for a human to be redirected
-HUMAN_REDIRECT_THRESHOLD = 2
-
-CURRENT_CHATBOT = "IT Helpdesk"
 helpdesk_list = [
         "IT Helpdesk",
         "Farm Service Agency Helpdesk",
@@ -60,16 +53,19 @@ def main():
             del st.session_state[key]
         st.rerun()  # Rerun the app
 
-    # Sidebar
-    st.sidebar.title("Service Status")
-    
-    if st.sidebar.button("Reset App"):
-        reset_session()
 
-    for service, status in services_status.items():
-        indicator = status_indicator(status)
-        status_text = "In Service" if status else "Out of Service"
-        st.sidebar.markdown(f"{indicator} **{service}** - {status_text}")
+    if "currentHelpdesk" not in st.session_state:
+        st.session_state.currentHelpdesk = "IT Helpdesk"
+
+    if "warningThreshold" not in st.session_state:
+        st.session_state.warningThreshold = 0.5
+    
+    if "terminateThreshold" not in st.session_state:
+        st.session_state.terminateThreshold = 1
+    
+    if "humanRedirectThreshold" not in st.session_state:
+        st.session_state.humanRedirectThreshold = 2
+
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -86,11 +82,34 @@ def main():
     if "first_interaction" not in st.session_state:
         st.session_state.first_interaction = True
 
-        with open('startingPrompt.txt', 'r') as startingPromptFile:
-            st.session_state.startingPrompt = startingPromptFile.read()
-
-        with open('issueSolvePrompt.txt', 'r') as issueSolvePromptFile:
-            st.session_state.issueSolvePrompt = issueSolvePromptFile.read()
+        # with open('startingPrompt.txt', 'r') as startingPromptFile:
+        #     st.session_state.startingPrompt = startingPromptFile.read()
+        st.session_state.startingPrompt = f"""
+        You are a friendly and helpful help desk assistant.
+        Goal:
+        Find out what issue the user is currently facing.
+        Instructions:
+        Respond in a friendly and concise manner to encourage the user to share what they need help with.
+        After the User Mentions a Valid Issue:
+        Respond with the following message, inserting the user's issue where indicated:
+        "Identified the issue - let's get started on helping you solve {{the user's issue}} right away."
+        If a user ask a question unrelated to an issue or if the user
+        asks a question that one of the relevant departments can't answer,
+        respond by prompting the user to ask another question. Here are the relevant departments: {helpdesk_list}
+        Do not ask for additional details after the user mentions a valid issue.
+        Accept any expression of a valid problem as sufficient to proceed.
+        Maintain a friendly and professional tone throughout the interaction."""
+                
+        # with open('issueSolvePrompt.txt', 'r') as issueSolvePromptFile:
+        #     st.session_state.issueSolvePrompt = issueSolvePromptFile.read()
+        st.session_state.issueSolvePrompt = f"""
+        You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA and/or Cal Poly.
+        Goal: Assist the user in resolving their issue by guiding them through the instructions outlined in the provided help desk issue document.
+        Instructions:
+        Walk the user through the issue they are having one step at a time.
+        If the user wants to speak to a human, push back a little bit and insist that you can suffice.
+        Only list step at a time, and wait to move onto the next one until the user indicates they have finished it.
+        Do not tell them to contact the help desk unless you cannot help the user figure out the issue."""
 
     if "no_similar_issues" not in st.session_state:
         st.session_state.no_similar_issues = False
@@ -137,6 +156,27 @@ def main():
     if "costWarningHappened" not in st.session_state:
         st.session_state.costWarningHappened = False
 
+
+    # Sidebar
+    st.sidebar.title("Service Status")
+    st.sidebar.write(f"Current Helpdesk: {st.session_state.currentHelpdesk}")
+
+    
+    for service, status in services_status.items():
+        indicator = status_indicator(status)
+        status_text = "In Service" if status else "Out of Service"
+        st.sidebar.markdown(f"{indicator} **{service}** - {status_text}")
+    st.sidebar.write(f"Total Conversation Cost: {st.session_state.total_cost}")
+    st.session_state.warningThreshold = st.sidebar.slider("Set the cost warning threshold",.1,100.0,.1)
+    st.session_state.warningThreshold /= 100
+    st.sidebar.write(f"Current Warning Threshold: {st.session_state.warningThreshold}")
+    st.session_state.terminateThreshold = st.sidebar.slider("Set the cost terminate threshold",0.2,150.0,.1)
+    st.session_state.terminateThreshold /= 100
+    st.sidebar.write(f"Current Terminate Threshold: {st.session_state.terminateThreshold}")
+    st.session_state.humanRedirectThreshold = st.sidebar.slider("Set the human redirect threshold",1,5,1)
+    if st.sidebar.button("Reset App"):
+        reset_session()
+
     for message in st.session_state.messages:
         if message['role'] == "Administrator":
             if ('PIL' in f"{type(message['content'])}"):
@@ -146,12 +186,11 @@ def main():
                 st.markdown(message["content"])
     
 
-    print(st.session_state.total_cost)
-    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= WARNING_THRESHOLD) and not (st.session_state.costWarningHappened)):
+    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= st.session_state.warningThreshold) and not (st.session_state.costWarningHappened)):
         st.toast('This conversation is starting to take a long time. Consider speaking to a help desk associate.', icon="⚠️")
         st.session_state.costWarningHappened = True
     
-    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= TERMINATE_THRESHOLD) and not (st.session_state.humanRedirect)):
+    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= st.session_state.terminateThreshold) and not (st.session_state.humanRedirect)):
         st.session_state.tooHighCost = True
         st.session_state.diagnoseMode = False
         st.session_state.humanRedirect = True
@@ -191,7 +230,7 @@ def main():
         selected_category = st.selectbox("Select a category:", categories)
 
         if st.button("Complete"):
-            st.write(f"""Input Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
+            st.write(f"""Selected Category: {selected_category}   \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
                      {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
                      {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}
                      \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.flagRaiserCost, 4)}""")
@@ -230,14 +269,14 @@ def main():
             if not st.session_state.selectedIssue:
                 st.session_state.input_tokens += len(tokenizer.encode(prompt))
 
-                redirect_info = decide_redirect(prompt, CURRENT_CHATBOT, helpdesk_info)
+                redirect_info = decide_redirect(prompt, st.session_state.currentHelpdesk, helpdesk_info)
                 helpdesk = re.search(r"<helpdesk>(.*?)</helpdesk>", redirect_info).group(1)
 
                 print(redirect_info)
 
                 st.session_state.output_tokens += len(tokenizer.encode(redirect_info))
 
-                if helpdesk in helpdesk_list and helpdesk != CURRENT_CHATBOT:
+                if helpdesk in helpdesk_list and helpdesk != st.session_state.currentHelpdesk:
                     reasoning = re.search(r"<reasoning>(.*?)</reasoning>", redirect_info).group(1)
 
                     with st.chat_message("assistant"):
@@ -336,7 +375,7 @@ def invokeModel(prompt, extraInstructions=""):
         
         if "Human request" in flag:
             st.session_state.redirectRequests += 1
-            if st.session_state.redirectRequests >= 2:
+            if st.session_state.redirectRequests >= st.session_state.humanRedirectThreshold:
                 st.session_state.diagnoseMode = False
                 st.session_state.humanRedirect = True
                 st.session_state.first_interaction = False
@@ -437,7 +476,7 @@ def flagRaiser(user_query, lastMessage):
     role_to_assume = 'aws_account_arn'    
 
     prompt = f"""
-    Take a look at this message. 
+    Take a look at the attached message. 
     If the user is asking to speak to a human,
     say the string: "Human request". 
     If the message indicates the bot cannot help the user anymore,
