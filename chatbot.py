@@ -31,6 +31,9 @@ helpdesk_info = [
 
 
 def main():
+    # hide top bar
+    hide_decoration_bar_style = ''' <style> header {visibility: hidden;} </style> ''' 
+    st.markdown(hide_decoration_bar_style, unsafe_allow_html=True)
 
     st.title("USDA Help Desk Chatbot")
 
@@ -52,6 +55,8 @@ def main():
         for key in st.session_state.keys():
             del st.session_state[key]
         st.rerun()  # Rerun the app
+
+        
 
 
     if "currentHelpdesk" not in st.session_state:
@@ -193,6 +198,9 @@ def main():
         if message['role'] == "Administrator":
             if ('PIL' in f"{type(message['content'])}"):
                 st.image(message['content'])
+        elif message['role'] == "user":
+            with st.chat_message(message['role'],avatar="usda-social-profile-round.png"):
+                st.markdown(message["content"])
         else:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
@@ -228,14 +236,14 @@ def main():
     if st.session_state.diagnoseMode:
         if prompt := st.chat_input('How can I help you today?'):
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
+            with st.chat_message(message['role'],avatar="usda-social-profile-round.png"):
                 st.markdown(prompt)
             passage = json.loads(st.session_state.selectedIssue['_source']['passage'])
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
             invokeModel(prompt, f"[{passage}]")
 
     elif st.session_state.issueResolved:
-        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
+        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
         feedback = st.text_input("Give me some quick feedback!")
 
         categories = ["Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website"]
@@ -250,7 +258,7 @@ def main():
     elif st.session_state.humanRedirect:
         if st.session_state.tooHighCost:
             st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
-        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = True)
+        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
         feedback = st.text_input("Give me some quick feedback!")
 
         categories = ["Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website"]
@@ -275,7 +283,7 @@ def main():
         if prompt := st.chat_input('How can I help you today?'):
             st.session_state.messages.append({"role": "user", "content": prompt})
 
-            with st.chat_message("user"):
+            with st.chat_message(message['role'],avatar="usda-social-profile-round.png"):
                 st.markdown(prompt)
 
             if not st.session_state.selectedIssue:
