@@ -35,9 +35,7 @@ def main():
     hide_decoration_bar_style = ''' <style> header {visibility: hidden;} </style> ''' 
     st.markdown(hide_decoration_bar_style, unsafe_allow_html=True)
 
-    st.title("USDA Help Desk Chatbot")
-
-    
+    st.title("USDA Help Desk Chatbot")        
 
     # True means the service is working
     services_status = {
@@ -161,48 +159,47 @@ def main():
     if "costWarningHappened" not in st.session_state:
         st.session_state.costWarningHappened = False
 
+    with st.sidebar:
+        st.title("Service Status")
+        st.write(f"Current Helpdesk: {st.session_state.currentHelpdesk}")
 
-    # Sidebar
-    st.sidebar.title("Service Status")
-    st.sidebar.write(f"Current Helpdesk: {st.session_state.currentHelpdesk}")
+        st.write("   \n")    
+        for service, status in services_status.items():
+            indicator = status_indicator(status)
+            status_text = "In Service" if status else "Out of Service"
+            st.markdown(f"{indicator} **{service}** - {status_text}")
 
-    st.sidebar.write("   \n")    
-    for service, status in services_status.items():
-        indicator = status_indicator(status)
-        status_text = "In Service" if status else "Out of Service"
-        st.sidebar.markdown(f"{indicator} **{service}** - {status_text}")
+        st.write("   \n")    
+        st.write("   \n")    
 
-    st.sidebar.write("   \n")    
-    st.sidebar.write("   \n")    
-
-    st.sidebar.write(f"Total Conversation Cost: {round(st.session_state.total_cost,4)}")
-    st.sidebar.write("   \n")    
-    st.sidebar.write("   \n")    
+        st.write(f"Total Conversation Cost: {round(st.session_state.total_cost,4)}")
+        st.write("   \n")    
+        st.write("   \n")    
 
 
-    st.session_state.warningThreshold = st.sidebar.slider(label="Set the cost warning threshold",min_value=0.1,max_value=100.0,step=.1,value=10.0)
-    st.session_state.warningThreshold /= 100
-    st.sidebar.write(f"Current Warning Threshold: {round(st.session_state.warningThreshold,4)}")
-    st.sidebar.write("   \n")    
+        st.session_state.warningThreshold = st.slider(label="Set the cost warning threshold",min_value=0.1,max_value=100.0,step=.1,value=10.0)
+        st.session_state.warningThreshold /= 100
+        st.write(f"Current Warning Threshold: {round(st.session_state.warningThreshold,4)}")
+        st.write("   \n")    
 
-    st.session_state.terminateThreshold = st.sidebar.slider(label="Set the cost terminate threshold",min_value=0.2,max_value=150.0,step=.1,value=45.0)
-    st.session_state.terminateThreshold /= 100
-    st.sidebar.write(f"Current Terminate Threshold: {round(st.session_state.terminateThreshold,4)}")
-    st.sidebar.write("   \n")    
+        st.session_state.terminateThreshold = st.slider(label="Set the cost terminate threshold",min_value=0.2,max_value=150.0,step=.1,value=45.0)
+        st.session_state.terminateThreshold /= 100
+        st.write(f"Current Terminate Threshold: {round(st.session_state.terminateThreshold,4)}")
+        st.write("   \n")    
 
-    st.session_state.humanRedirectThreshold = st.sidebar.slider(label="Set the human redirect threshold",min_value=1,max_value=5,step=1,value=2)
-    if st.sidebar.button("Reset App"):
-        reset_session()
+        st.session_state.humanRedirectThreshold = st.slider(label="Set the human redirect threshold",min_value=1,max_value=5,step=1,value=2)
+        if st.button("Reset App"):
+            reset_session()
 
     for message in st.session_state.messages:
         if message['role'] == "Administrator":
             if ('PIL' in f"{type(message['content'])}"):
                 st.image(message['content'])
         elif message['role'] == "user":
-            with st.chat_message(message['role'],avatar="usda-social-profile-round.png"):
+            with st.chat_message(message['role']):
                 st.markdown(message["content"])
         else:
-            with st.chat_message(message["role"]):
+            with st.chat_message(message["role"], avatar="usda-social-profile-round.png"):
                 st.markdown(message["content"])
     
 
@@ -236,7 +233,7 @@ def main():
     if st.session_state.diagnoseMode:
         if prompt := st.chat_input('How can I help you today?'):
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message(message['role'],avatar="usda-social-profile-round.png"):
+            with st.chat_message("user"):
                 st.markdown(prompt)
             passage = json.loads(st.session_state.selectedIssue['_source']['passage'])
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
@@ -283,7 +280,7 @@ def main():
         if prompt := st.chat_input('How can I help you today?'):
             st.session_state.messages.append({"role": "user", "content": prompt})
 
-            with st.chat_message(message['role'],avatar="usda-social-profile-round.png"):
+            with st.chat_message("user"):
                 st.markdown(prompt)
 
             if not st.session_state.selectedIssue:
@@ -377,7 +374,7 @@ def invokeModel(prompt, extraInstructions=""):
             st.session_state.issueFound = True
             findRelevantIssue(prompt)
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar="usda-social-profile-round.png"):
         st.write_stream(generate_response())
     
     fullResponse = st.session_state.messages[-1]['content']
