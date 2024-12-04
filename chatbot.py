@@ -7,6 +7,8 @@ from streamlit_star_rating import st_star_rating
 from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
 import tiktoken
+import ast
+from streamlit_pills import pills
 from llm_utils import *
 
 tokenizer = tiktoken.get_encoding("o200k_base")
@@ -52,8 +54,6 @@ def main():
     def reset_session():
         for key in st.session_state.keys():
             del st.session_state[key]
-        st.rerun()  # Rerun the app
-
         
 
 
@@ -159,9 +159,9 @@ def main():
     if "costWarningHappened" not in st.session_state:
         st.session_state.costWarningHappened = False
 
-    with st.sidebar:
-        st.title("Service Status")
-        st.write(f"Current Helpdesk: {st.session_state.currentHelpdesk}")
+    if "pills" not in st.session_state:
+        st.session_state.pills = []
+
 
         st.write("   \n")    
         for service, status in services_status.items():
@@ -242,9 +242,15 @@ def main():
     elif st.session_state.issueResolved:
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
         feedback = st.text_input("Give me some quick feedback!")
+        convo = ""
+        for message in st.session_state.messages:
+            if message['role'] != "Administrator":
+                convo += f"{message} \n"
+        if len(st.session_state.pills) == 0:
+            st.session_state.pills = generate_tags(f"{str(convo)}")
+        actualTagList = ast.literal_eval(st.session_state.pills)
 
-        categories = ["Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website"]
-        selected_category = st.selectbox("Select a category:", categories)
+        selected_category = st.pills("Select a category:", options=actualTagList,selection_mode="multi")
 
         if st.button("Complete"):
             st.write(f"""Selected Category: {selected_category}   \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
@@ -257,13 +263,20 @@ def main():
             st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
         feedback = st.text_input("Give me some quick feedback!")
+        convo = ""
+        for message in st.session_state.messages:
+            if message['role'] != "Administrator":
+                convo += f"{message} \n"
+        if len(st.session_state.pills) == 0:
+            st.session_state.pills = generate_tags(f"{str(convo)}")
+        actualTagList = ast.literal_eval(st.session_state.pills)
 
-        categories = ["Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website"]
-        selected_category = st.selectbox("Select a category:", categories)
+        selected_category = st.pills("Select a category:", options=actualTagList,selection_mode="multi")
+
 
         if st.button("Complete"):
             with st.spinner("Generating Summary..."):
-                summary = generate_summary(f"{str(st.session_state.messages)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
+                summary = generate_summary(f"{str(convo)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
             st.write(f"""To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
                      {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \n\nSummary Input Tokens: 
                      {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: \${round(st.session_state.summaryCost, 4)}
@@ -591,6 +604,44 @@ def generate_summary(document_text):
     )
     return text
 
+
+
+def generate_tags(document_text):
+    role_to_assume = 'aws_account_arn'    
+
+    prompt = f"""
+    From the contents of this conversation,
+    generate a list of possible helpdesk one-word 'categories.' 
+    Examples include but are not limited to "Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website".
+    Return nothing but a valid list object containing of categorical tags
+    in the following format: ['category 1','category 2']
+    Here is the conversation: {document_text}
+    """
+    # Use STS to assume role  
+    credentials = boto3.client('sts').assume_role(  
+        RoleArn=role_to_assume,  
+        RoleSessionName='RoleBSession'  
+    )['Credentials']  
+
+    # Create Bedrock client with temporary credentials  
+    bedrock_session = boto3.session.Session(  
+        aws_access_key_id=credentials['AccessKeyId'],  
+        aws_secret_access_key=credentials['SecretAccessKey'],  
+        aws_session_token=credentials['SessionToken']  
+    )  
+
+    bedrock = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
+
+    body = json.dumps({
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": prompt}],
+    "anthropic_version": "bedrock-2023-05-31"
+    })
+
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
+
+    response_body = json.loads(response.get("body").read())
+    return response_body.get("content")[0].get("text")
 
 
 
