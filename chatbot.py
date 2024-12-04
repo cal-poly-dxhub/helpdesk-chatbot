@@ -8,7 +8,6 @@ from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
 import tiktoken
 import ast
-from streamlit_pills import pills
 from llm_utils import *
 
 tokenizer = tiktoken.get_encoding("o200k_base")
@@ -163,6 +162,7 @@ def main():
         st.session_state.pills = []
 
 
+    with st.sidebar:
         st.write("   \n")    
         for service, status in services_status.items():
             indicator = status_indicator(status)
@@ -277,7 +277,7 @@ def main():
         if st.button("Complete"):
             with st.spinner("Generating Summary..."):
                 summary = generate_summary(f"{str(convo)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
-            st.write(f"""To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
+            st.write(f"""Selected Category: {selected_category} \n\n To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
                      {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \n\nSummary Input Tokens: 
                      {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: \${round(st.session_state.summaryCost, 4)}
                          \nFlag Check Input Tokens: 
