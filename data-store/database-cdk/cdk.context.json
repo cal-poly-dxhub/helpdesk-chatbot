@@ -1,0 +1,8 @@
+{
+  "availability-zones:account=345594600190:region=your_aws_region": [
+    "your_aws_regiona",
+    "your_aws_regionb",
+    "your_aws_regionc",
+    "your_aws_regiond"
+  ]
+}
