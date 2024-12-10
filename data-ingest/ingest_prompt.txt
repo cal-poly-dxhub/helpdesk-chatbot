@@ -1,0 +1,12 @@
+Based off the provided help desk article, create a report in the following format. 
+Copy the sections and steps exactly a they appear in the document.
+
+<report>
+{{
+  "guide_title": A descriptive title of this article,
+  "question_asked": The question that is asked,
+  "description": A description of what this article is helping with
+}}
+</report>
+
+{document}
