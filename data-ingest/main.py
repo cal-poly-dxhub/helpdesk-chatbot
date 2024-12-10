@@ -1,6 +1,7 @@
 from opensearch_insert import insert_document_os
 from aws_utils import *
 import os
+import time
 
 def list_objects_in_folder(folder_path):
     return [os.path.join(folder_path, item) for item in os.listdir(folder_path)]
