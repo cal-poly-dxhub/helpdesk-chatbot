@@ -78,14 +78,7 @@ def insert_document_os(text_data, guide_file_name):
         report_text = re.search(r'<report>(\s*{.*?}\s*)</report>', report, re.DOTALL).group(1)
         data = json.loads(report_text)
 
-        passage = json.dumps({
-            "guide_title": data["guide_title"],
-            "question_asked": data["question_asked"],
-            "description": data["description"],
-            "passage": text_data
-        })
-
-        embedding = generate_embedding(passage)
+        embedding = generate_embedding(text_data)
 
         # Preparing document for OpenSearch
         document = {

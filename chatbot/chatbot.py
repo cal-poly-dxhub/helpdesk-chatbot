@@ -4,7 +4,6 @@ import json
 import re
 from os_query import getSimilarDocs
 from streamlit_star_rating import st_star_rating
-from injectImage import replace_uuid_with_base64, decode_base64_to_image
 from search_utils import embed
 import tiktoken
 import ast
@@ -193,8 +192,7 @@ def main():
 
     for message in st.session_state.messages:
         if message['role'] == "Administrator":
-            if ('PIL' in f"{type(message['content'])}"):
-                st.image(message['content'])
+            pass
         elif message['role'] == "user":
             with st.chat_message(message['role']):
                 st.markdown(message["content"])
@@ -219,7 +217,7 @@ def main():
         simulated_user_input = "Hi"
         if st.session_state.diagnoseMode:
             simulated_user_input = "Let's get started."
-            passage = json.loads(st.session_state.selectedIssue['_source']['passage'])
+            passage = st.session_state.selectedIssue['_source']['passage']
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
             invokeModel(simulated_user_input, f"{st.session_state.issueSolvePrompt} [{passage}]")
             st.session_state.messages.append({"role": "Administrator", "content": f"{st.session_state.issueSolvePrompt} [{passage}]"})
@@ -235,7 +233,7 @@ def main():
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
-            passage = json.loads(st.session_state.selectedIssue['_source']['passage'])
+            passage = st.session_state.selectedIssue['_source']['passage']
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
             invokeModel(prompt, f"[{passage}]")
 
@@ -425,19 +423,6 @@ def invokeModel(prompt, extraInstructions=""):
         st.session_state.input_tokens * SONNET_INPUT_COST_PER_TOKEN + 
         st.session_state.output_tokens * SONNET_OUTPUT_COST_PER_TOKEN
     )
-
-    if st.session_state.diagnoseMode:
-        image_dict = st.session_state.selectedIssue["_source"]["images"]
-        fullResponse = replace_uuid_with_base64(fullResponse, image_dict)
-        images = re.findall(r"<image_base64>(.*?)</image_base64>", fullResponse)
-        
-        for image_base64 in images:
-            image = decode_base64_to_image(image_base64)
-            st.session_state.messages.append({"role": "Administrator", "content": image})
-            st.image(image)
-
-
-
 
 def findRelevantIssue(prompt):
     embedding = embed(prompt)

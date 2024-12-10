@@ -13,5 +13,6 @@ for file in document_paths:
     with open(file, "r") as file:
         text_content = file.read()
     document = insert_document_os(text_content, file_name)
-    break
+    time.sleep(2)
+
 
