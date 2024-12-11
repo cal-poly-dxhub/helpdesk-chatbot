@@ -18,9 +18,9 @@ HAIKU_OUTPUT_COST_PER_TOKEN = 0.00000125
 
 
 helpdesk_list = [
-        "IT Helpdesk",
-        "Farm Service Agency Helpdesk",
-        "Forest Service Helpdesk"
+    "IT Helpdesk",
+    "Farm Service Agency Helpdesk",
+    "Forest Service Helpdesk"
 ]
 
 helpdesk_info = [
@@ -138,6 +138,8 @@ def main():
 
     if "summaryCost" not in st.session_state:
         st.session_state.summaryCost = 0
+        # for now summary cost accounts for the (marginal) cost of generating tags
+        # i was just too lazy to make tag generation cost its own thing
 
     if "inputFlagTokens" not in st.session_state:
         st.session_state.inputFlagTokens = 0
@@ -365,17 +367,6 @@ def invokeModel(prompt, extraInstructions=""):
             if chunk["type"] == "content_block_delta":
                 text_delta = chunk["delta"].get("text", "")
                 full_response += text_delta
-                # uuid = re.search(r"\{([a-zA-Z0-9]{8})\}", full_response)
-                # if "(" in text_delta:
-                #     text_delta = text_delta.split("(")[0]
-                #     yield text_delta
-                #     show_text = False
-                # if ")" in text_delta:
-                #     show_text = True
-                #     text_delta = text_delta[1:]
-                #     text_delta = text_delta.split(")")[1]
-                # if uuid:
-                #     full_response = full_response.replace(uuid.group(1), "")
                     
                 if show_text:
                     yield text_delta  # Yielding for streaming
@@ -442,7 +433,7 @@ def findRelevantIssue(prompt):
         st.write("Select the issue that most closely matches your query.")
         for idx, result in enumerate(filteredIssues):
             st.button(
-                f"Title: {result['_source']['section_title']}, Score: {result['_score']}",
+                f"Title: {result['_source']['guide_title']}, Score: {result['_score']}",
                 key=f"issue_button_{idx}",
                 on_click=diagnoseIssue,
                 args=(result,)
@@ -495,7 +486,7 @@ def flagRaiser(user_query, lastMessage):
     Based on the following criteria, respond only with the exact matching string (without any additional text or explanation):
     - If the *User's message* explicitly requests to speak to a human, respond with: "Human request".
     - If the *User's message* or *System's message* suggests that the bot cannot assist the user any further, respond with: "Redirect request".
-    - If the *User's message* or *System's message* indicates that the user's issue has been resolved, respond with: "Issue Resolved".
+    - If the *User's message* or *System's message* EXPLICITLY indicates that the user's issue has been resolved, respond with: "Issue Resolved".
     - If neither message matches any of the above conditions, respond with: "NA".
 
     User's message to evaluate: {user_query}
@@ -577,15 +568,15 @@ def generate_summary(document_text):
     tokens = len(tokenizer.encode(body))
     st.session_state.inputSummaryTokens += tokens
 
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
 
     response_body = json.loads(response.get("body").read())
     text = response_body.get("content")[0].get("text")
     tokens = len(tokenizer.encode(text))
     st.session_state.outputSummaryTokens += tokens
     st.session_state.summaryCost += (
-        st.session_state.inputSummaryTokens * SONNET_INPUT_COST_PER_TOKEN + 
-        st.session_state.outputSummaryTokens * SONNET_OUTPUT_COST_PER_TOKEN
+        st.session_state.inputSummaryTokens * HAIKU_INPUT_COST_PER_TOKEN + 
+        st.session_state.outputSummaryTokens * HAIKU_OUTPUT_COST_PER_TOKEN
     )
     return text
 
@@ -623,10 +614,20 @@ def generate_tags(document_text):
     "anthropic_version": "bedrock-2023-05-31"
     })
 
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
+    tokens = len(tokenizer.encode(body))
+    st.session_state.inputSummaryTokens += tokens
+
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
 
     response_body = json.loads(response.get("body").read())
-    return response_body.get("content")[0].get("text")
+    text = response_body.get("content")[0].get("text")
+    tokens = len(tokenizer.encode(text))
+    st.session_state.outputSummaryTokens += tokens
+    st.session_state.summaryCost += (
+        st.session_state.inputSummaryTokens * HAIKU_INPUT_COST_PER_TOKEN + 
+        st.session_state.outputSummaryTokens * HAIKU_OUTPUT_COST_PER_TOKEN
+    )
+    return text
 
 
 
