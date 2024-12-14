@@ -30,31 +30,7 @@ helpdesk_info = [
 ]
 
 
-def main():
-    # hide top bar
-    hide_decoration_bar_style = ''' <style> header {visibility: hidden;} </style> ''' 
-    st.markdown(hide_decoration_bar_style, unsafe_allow_html=True)
-
-    st.title("USDA Help Desk Chatbot")        
-
-    # True means the service is working
-    services_status = {
-        "Tier One Helpdesk": True,
-        "Tier Two Helpdesk": False,
-    }
-
-    def status_indicator(is_up):
-        if is_up:
-            return ":large_green_circle:"
-        else:
-            return ":red_circle:"
-    
-    def reset_session():
-        for key in st.session_state.keys():
-            del st.session_state[key]
-        
-
-
+def sessionStateInit():
     if "currentHelpdesk" not in st.session_state:
         st.session_state.currentHelpdesk = "IT Helpdesk"
 
@@ -74,6 +50,9 @@ def main():
     if "issueFound" not in st.session_state:
         st.session_state.issueFound = False
 
+    if "chooseStepStyleMode" not in st.session_state:
+        st.session_state.chooseStepStyleMode = False
+
     if "issueResolved" not in st.session_state:
         st.session_state.issueResolved = False
 
@@ -86,7 +65,7 @@ def main():
         # with open('startingPrompt.txt', 'r') as startingPromptFile:
         #     st.session_state.startingPrompt = startingPromptFile.read()
         st.session_state.startingPrompt = f"""
-        You are a friendly and helpful help desk assistant.
+        You are a friendly and helpful help desk assistant for the USDA.
         Goal:
         Find out what issue the user is currently facing.
         Instructions:
@@ -104,7 +83,7 @@ def main():
         # with open('issueSolvePrompt.txt', 'r') as issueSolvePromptFile:
         #     st.session_state.issueSolvePrompt = issueSolvePromptFile.read()
         st.session_state.issueSolvePrompt = f"""
-        You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA and/or Cal Poly.
+        You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA.
         Goal: Assist the user in resolving their issue by guiding them through the instructions outlined in the provided help desk issue document.
         Instructions:
         Walk the user through the issue they are having one step at a time.
@@ -112,6 +91,22 @@ def main():
         Only list step at a time, and wait to move onto the next one until the user indicates they have finished it.
         Do not tell them to contact the help desk unless you cannot help the user figure out the issue."""
 
+        st.session_state.issueSolvePromptGuide = f"""
+        You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA.
+        Goal: Assist the user in resolving their issue by guiding them through the instructions outlined in the provided help desk issue document.
+        Instructions:
+        Walk the user through the issue they are having by providing a guide of what to do that contains step by step instructions.
+        If the user wants to speak to a human, push back a little bit and insist that you can suffice.
+        Do not tell them to contact the help desk unless you cannot help the user figure out the issue."""
+
+        st.session_state.chooseStepStylePrompt = f"""
+        You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA.
+        Ask the user if they would like to receive the steps for solving their issue
+        in multiple separate individually written steps or as a guide containing all steps numbered separately.
+        If the user indicates they want multiple separate steps, respond with "Got it - multiple steps." verbatim.
+        If the user indicates they want a guide of steps, respond with "Got it - comprehensive guide." verbatim.
+        If the user is off topic or isn't choosing between the two previously mentioned step styles, urge them to choose between those two.
+        """
     if "no_similar_issues" not in st.session_state:
         st.session_state.no_similar_issues = False
 
@@ -161,6 +156,51 @@ def main():
 
     if "pills" not in st.session_state:
         st.session_state.pills = []
+    
+    if "stepStyle" not in st.session_state:
+        st.session_state.stepStyle = ""
+
+
+def main():
+    # hide top bar
+    hide_decoration_bar_style = ''' <style> header {visibility: hidden;} </style> ''' 
+    st.markdown(hide_decoration_bar_style, unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+    textarea[data-testid="stChatInputTextArea"]::placeholder {
+        color: #c0b7b6 !important; /* Replace with your desired color */
+        opacity: 1 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+    st.title("USDA Help Desk Chatbot")        
+
+    sessionStateInit()
+    if st.session_state.stepStyle != "":
+        if st.session_state.stepStyle == 'g':
+            st.session_state.issueSolvePrompt = st.session_state.issueSolvePromptGuide
+
+    # True means the service is working
+    services_status = {
+        "Tier One Helpdesk": True,
+        "Tier Two Helpdesk": False,
+    }
+
+    def status_indicator(is_up):
+        if is_up:
+            return ":large_green_circle:"
+        else:
+            return ":red_circle:"
+
+
+    def reset_session():
+        keys_to_delete = list(st.session_state.keys())
+        for key in keys_to_delete:
+            del st.session_state[key]
+        st.rerun()
+
 
 
     with st.sidebar:
@@ -223,15 +263,23 @@ def main():
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
             invokeModel(simulated_user_input, f"{st.session_state.issueSolvePrompt} [{passage}]")
             st.session_state.messages.append({"role": "Administrator", "content": f"{st.session_state.issueSolvePrompt} [{passage}]"})
-
+        elif st.session_state.chooseStepStyleMode:
+            simulated_user_input = "Ok"
+            invokeModel(simulated_user_input,st.session_state.chooseStepStylePrompt)
+            st.session_state.messages.append({"role": "Administrator", "content": st.session_state.chooseStepStylePrompt})
         else:
             invokeModel(simulated_user_input, st.session_state.startingPrompt)
             st.session_state.messages.append({"role": "Administrator", "content": st.session_state.startingPrompt})
 
+    if st.session_state.chooseStepStyleMode:
+        if prompt := st.chat_input('Choose a step style.'):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            invokeModel(prompt)
 
-
-    if st.session_state.diagnoseMode:
-        if prompt := st.chat_input('How can I help you today?'):
+    elif st.session_state.diagnoseMode:
+        if prompt := st.chat_input(f'How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?'):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -241,6 +289,7 @@ def main():
 
     elif st.session_state.issueResolved:
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
+        
         feedback = st.text_input("Give me some quick feedback!")
         convo = ""
         for message in st.session_state.messages:
@@ -250,9 +299,11 @@ def main():
             st.session_state.pills = generate_tags(f"{str(convo)}")
         actualTagList = ast.literal_eval(st.session_state.pills)
 
-        selected_category = st.pills("Select a category:", options=actualTagList,selection_mode="multi")
+        selected_category = st.pills("Select one or more categories that best match your issue:", options=actualTagList,selection_mode="multi")
 
         if st.button("Complete"):
+            if stars == 5:
+                st.balloons()
             st.write(f"""Selected Category: {selected_category}   \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
                      {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
                      {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}
@@ -262,6 +313,7 @@ def main():
         if st.session_state.tooHighCost:
             st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
+
         feedback = st.text_input("Give me some quick feedback!")
         convo = ""
         for message in st.session_state.messages:
@@ -275,6 +327,8 @@ def main():
 
 
         if st.button("Complete"):
+            if stars == 5:
+                st.balloons()
             with st.spinner("Generating Summary..."):
                 summary = generate_summary(f"{str(convo)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
             st.write(f"""Selected Category: {selected_category} \n\n To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
@@ -374,7 +428,19 @@ def invokeModel(prompt, extraInstructions=""):
         st.session_state.messages.append({"role": "assistant", "content": full_response})
         if "Identified the issue -" in full_response:
             st.session_state.issueFound = True
+            st.session_state.first_interaction = True
+            st.session_state.chooseStepStyleMode = True
             findRelevantIssue(prompt)
+
+        if "Got it - multiple steps." in full_response:
+            st.session_state.stepStyle = 'm'
+            st.session_state.chooseStepStyleMode = False
+            setDiagnoseMode()
+
+        if "Got it - comprehensive guide." in full_response:
+            st.session_state.stepStyle = 'g'
+            st.session_state.chooseStepStyleMode = False
+            setDiagnoseMode()
 
     with st.chat_message("assistant", avatar="usda-social-profile-round.png"):
         st.write_stream(generate_response())
@@ -385,6 +451,9 @@ def invokeModel(prompt, extraInstructions=""):
         flag = flagRaiser(prompt, fullResponse)
 
         print(f"\n{flag=}")
+
+        if "innapropriate" in flag:
+            st.toast('DO NOT SAY THAT!!!', icon="👮")
 
         if "Issue Resolved" in flag:
             st.session_state.diagnoseMode = False
@@ -471,9 +540,12 @@ def noSimilarIssues():
 
 
 def diagnoseIssue(issue):
+    st.session_state.selectedIssue = issue
+    st.rerun()
+
+def setDiagnoseMode():
     st.session_state.diagnoseMode = True
     st.session_state.first_interaction = True 
-    st.session_state.selectedIssue = issue
     st.rerun()
 
 
@@ -486,8 +558,9 @@ def flagRaiser(user_query, lastMessage):
     Based on the following criteria, respond only with the exact matching string (without any additional text or explanation):
     - If the *User's message* explicitly requests to speak to a human, respond with: "Human request".
     - If the *User's message* or *System's message* suggests that the bot cannot assist the user any further, respond with: "Redirect request".
-    - If the *User's message* or *System's message* EXPLICITLY indicates that the user's issue has been resolved, respond with: "Issue Resolved".
+    - If the *User's message* or *System's message* EXPLICITLY indicates that the entire user's issue has been resolved, and NOT that a single step has been resolved, respond with: "Issue Resolved". In order for this to be "Issue Resolved" the system must not have any more steps to talk about.
     - If neither message matches any of the above conditions, respond with: "NA".
+    - If the *User's message* or *System's message* contains profanity or personally identifiable information, still use the above criteria to respond with the appropriate string, but separated by a ;, respond with "innapropriate" (example: "NA;innapropriate").
 
     User's message to evaluate: {user_query}
     System's message to evaluate: {lastMessage}
@@ -518,18 +591,20 @@ def flagRaiser(user_query, lastMessage):
     tokens = len(tokenizer.encode(body))
     st.session_state.inputFlagTokens += tokens
 
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
-    #response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
+    # response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
+    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-sonnet-20240229-v1:0")
 
     response_body = json.loads(response.get("body").read())
     text = response_body.get("content")[0].get("text")
     tokens = len(tokenizer.encode(text))
     st.session_state.outputFlagTokens += tokens
     st.session_state.flagRaiserCost += (
-        st.session_state.inputFlagTokens * HAIKU_INPUT_COST_PER_TOKEN + 
-        st.session_state.outputFlagTokens * HAIKU_OUTPUT_COST_PER_TOKEN
+        st.session_state.inputFlagTokens * SONNET_INPUT_COST_PER_TOKEN + 
+        st.session_state.outputFlagTokens * SONNET_OUTPUT_COST_PER_TOKEN
     )
     return text
+
+
 
 
 
