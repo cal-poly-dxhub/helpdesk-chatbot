@@ -66,6 +66,7 @@ def sessionStateInit():
         #     st.session_state.startingPrompt = startingPromptFile.read()
         st.session_state.startingPrompt = f"""
         You are a friendly and helpful help desk assistant for the USDA.
+        You are to assist with any technical problems a user may have.
         Goal:
         Find out what issue the user is currently facing.
         Instructions:
@@ -102,7 +103,7 @@ def sessionStateInit():
         st.session_state.chooseStepStylePrompt = f"""
         You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA.
         Ask the user if they would like to receive the steps for solving their issue
-        in multiple separate individually written steps or as a guide containing all steps numbered separately.
+        in a guide containing all steps or separate individuall steps.
         If the user indicates they want multiple separate steps, respond with "Got it - multiple steps." verbatim.
         If the user indicates they want a guide of steps, respond with "Got it - comprehensive guide." verbatim.
         If the user is off topic or isn't choosing between the two previously mentioned step styles, urge them to choose between those two.
@@ -273,14 +274,23 @@ def main():
 
     if st.session_state.chooseStepStyleMode:
         if prompt := st.chat_input('Choose a step style.'):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            if not profanity_check(prompt):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+            else:
+                st.session_state.messages.append({"role": "user", "content": "The user has entered profanity."})
+
             with st.chat_message("user"):
                 st.markdown(prompt)
             invokeModel(prompt)
 
     elif st.session_state.diagnoseMode:
-        if prompt := st.chat_input(f'How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?'):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+        if prompt := st.chat_input(f"How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?"):
+
+            if not profanity_check(prompt):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+            else:
+                st.session_state.messages.append({"role": "user", "content": "The user has entered profanity."})
+
             with st.chat_message("user"):
                 st.markdown(prompt)
             passage = st.session_state.selectedIssue['_source']['passage']
@@ -288,6 +298,8 @@ def main():
             invokeModel(prompt, f"[{passage}]")
 
     elif st.session_state.issueResolved:
+        if st.button("New Chat"):
+            reset_session()
         stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
         
         feedback = st.text_input("Give me some quick feedback!")
@@ -345,7 +357,10 @@ def main():
              documents found. Redirecting you to a help desk associate.""")
     else:
         if prompt := st.chat_input('How can I help you today?'):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            if not profanity_check(prompt):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+            else:
+                st.session_state.messages.append({"role": "user", "content": "The user has entered profanity."})
 
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -354,7 +369,11 @@ def main():
                 st.session_state.input_tokens += len(tokenizer.encode(prompt))
 
                 redirect_info = decide_redirect(prompt, st.session_state.currentHelpdesk, helpdesk_info)
-                helpdesk = re.search(r"<helpdesk>(.*?)</helpdesk>", redirect_info).group(1)
+                try:
+                    helpdesk = re.search(r"<helpdesk>(.*?)</helpdesk>", redirect_info).group(1)
+                except:
+                    print("No redirect found")
+                    helpdesk = st.session_state.currentHelpdesk
 
                 print(redirect_info)
 
@@ -368,22 +387,46 @@ def main():
                 else:
                     invokeModel(prompt)
 
+def profanity_check(text):
+    bedrock_session = boto3.session.Session()
+    client = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
+
+    response = client.apply_guardrail(
+        guardrailIdentifier='your_guardrail_id',
+        guardrailVersion='2',
+        source='INPUT',
+        content=[
+            {
+                'text': {
+                    'text': text,
+                    'qualifiers': [
+                        'guard_content',
+                    ]
+                }
+            },
+        ]
+    )
+    action = response.get('action', '')
+
+    return True if action == "GUARDRAIL_INTERVENED" else False
+
 
 def invokeModel(prompt, extraInstructions=""):
-    role_to_assume = 'aws_account_arn'    
-    # Use STS to assume role  
-    credentials = boto3.client('sts').assume_role(  
-        RoleArn=role_to_assume,  
-        RoleSessionName='RoleBSession'  
-    )['Credentials']  
-    # Create Bedrock client with temporary credentials  
-    bedrock_session = boto3.session.Session(  
-        aws_access_key_id=credentials['AccessKeyId'],  
-        aws_secret_access_key=credentials['SecretAccessKey'],  
-        aws_session_token=credentials['SessionToken']  
-    )  
+    # role_to_assume = 'aws_account_arn'    
+    # # Use STS to assume role  
+    # credentials = boto3.client('sts').assume_role(  
+    #     RoleArn=role_to_assume,  
+    #     RoleSessionName='RoleBSession'  
+    # )['Credentials']  
+    # # Create Bedrock client with temporary credentials  
+    # bedrock_session = boto3.session.Session(  
+    #     aws_access_key_id=credentials['AccessKeyId'],  
+    #     aws_secret_access_key=credentials['SecretAccessKey'],  
+    #     aws_session_token=credentials['SessionToken']  
+    # )  
+    bedrock_session = boto3.session.Session()
     client = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
-    model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 
     chatHistory = ""
     for m in st.session_state.messages:
@@ -396,11 +439,14 @@ def invokeModel(prompt, extraInstructions=""):
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 1000,
         "temperature": 0.7,
+        "amazon-bedrock-guardrailConfig": {
+            "streamProcessingMode": "ASYNCHRONOUS"
+        },
         "messages": [
             {
                 "role": "user",
                 "content": f"Administrator: {adminContent} User: {userContent} Assistant:"
-            }
+            },
         ],
     }
     
@@ -409,7 +455,10 @@ def invokeModel(prompt, extraInstructions=""):
     st.session_state.input_tokens += tokens
 
     streaming_response = client.invoke_model_with_response_stream(
-        modelId=model_id, body=request
+        modelId=model_id, 
+        body=request,
+        guardrailIdentifier="your_guardrail_id",
+        guardrailVersion="2"
     )
 
     # Generator function to yield text chunks for `st.write_stream`
@@ -453,7 +502,7 @@ def invokeModel(prompt, extraInstructions=""):
         print(f"\n{flag=}")
 
         if "innapropriate" in flag:
-            st.toast('DO NOT SAY THAT!!!', icon="👮")
+            st.toast('Please refrain from profanity usage', icon="👮")
 
         if "Issue Resolved" in flag:
             st.session_state.diagnoseMode = False
