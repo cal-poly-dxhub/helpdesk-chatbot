@@ -1,6 +1,11 @@
 import numpy as np
 import boto3
 import json
+import yaml
+
+# Load Config
+with open('../config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
 def normalize_scores_(scores,normalizer):
     """
@@ -115,11 +120,9 @@ def hybrid_search(top_K_results,lexical_results, semantic_results, interpolation
     combined_results = sorted(combined_results, key=lambda hit: hit['_score'], reverse=True)
     return {'hits': {'hits': combined_results[:top_K_results]}}
 
-
-
 def embed(message):
-    client = boto3.client("bedrock-runtime", region_name="your_aws_region")
-    model_id = 'amazon.titan-embed-text-v2:0'
+    client = boto3.client("bedrock-runtime", region_name=config['region'])
+    model_id = config['model']['embedding']
     
     native_request = {"inputText" : message}
     request = json.dumps(native_request)

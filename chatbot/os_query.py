@@ -5,7 +5,7 @@ from search_utils import hybrid_search
 import yaml
 
 # Load Config
-with open('config.yaml', 'r') as file:
+with open('../config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 

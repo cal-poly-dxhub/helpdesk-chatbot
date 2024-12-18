@@ -11,11 +11,11 @@ from search_utils import embed
 from datetime import datetime
 import os
 import logging
-import yaml
 from logging_config import log_chat, save_results
+import yaml
 
-# Load Config
-with open('config.yaml', 'r') as file:
+# Load Config   
+with open('../config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 tokenizer = tiktoken.get_encoding("o200k_base")

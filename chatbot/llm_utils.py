@@ -5,7 +5,7 @@ import tiktoken
 import logging
 
 # Load Config
-with open('config.yaml', 'r') as file:
+with open('../config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 SONNET_INPUT_COST_PER_TOKEN = 0.000003
@@ -115,7 +115,6 @@ def profanity_check(text):
     return True if action == "GUARDRAIL_INTERVENED" else False
 
 def generate_tags(st, document_text):
-    role_to_assume = 'aws_account_arn'    
 
     prompt = f"""
     From the contents of this conversation,
