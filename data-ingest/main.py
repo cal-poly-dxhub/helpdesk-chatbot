@@ -14,6 +14,8 @@ for file in document_paths:
     with open(file, "r") as file:
         text_content = file.read()
     document = insert_document_os(text_content, file_name)
-    time.sleep(2)
+
+    # Sleep to not throttle LLM
+    time.sleep(3)
 
 

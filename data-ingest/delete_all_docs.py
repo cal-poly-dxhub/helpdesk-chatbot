@@ -1,9 +1,14 @@
 from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
 import boto3
+import yaml
 
-region = 'your_aws_region'
+# Load Config
+with open('config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
+
+region = config['region']
 service = 'aoss'
-host = 'ouv6ulfktpkqvgekbhd3.your_aws_region.aoss.amazonaws.com'
+host = config['opensearch_endpoint']
 
 session = boto3.Session()
 credentials = session.get_credentials()
@@ -16,7 +21,7 @@ client = OpenSearch(
     verify_certs=True,
     connection_class=RequestsHttpConnection
 )
-index_name = 'helpdesk-index'
+index_name = config['opensearch_index']
 
 # Fetch document IDs
 search_body = {

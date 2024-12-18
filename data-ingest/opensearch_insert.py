@@ -4,29 +4,20 @@ from langchain_aws import BedrockEmbeddings
 from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
 from requests_aws4auth import AWS4Auth
 import re
+import yaml
+
+# Load Config
+with open('config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
 def generate_report(document_text):
-    role_to_assume = 'aws_account_arn'    
-
     with open("ingest_prompt.txt", "r") as file:
         template = file.read()
 
     prompt = template.format(document=document_text)
 
-    # Use STS to assume role  
-    credentials = boto3.client('sts').assume_role(  
-        RoleArn=role_to_assume,  
-        RoleSessionName='RoleBSession'  
-    )['Credentials']  
-
-    # Create Bedrock client with temporary credentials  
-    bedrock_session = boto3.session.Session(  
-        aws_access_key_id=credentials['AccessKeyId'],  
-        aws_secret_access_key=credentials['SecretAccessKey'],  
-        aws_session_token=credentials['SessionToken']  
-    )  
-
-    bedrock = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
+    bedrock_session = boto3.session.Session()
+    bedrock = bedrock_session.client("bedrock-runtime", region_name=config['region'])
 
     body = json.dumps({
     "max_tokens": 4096,
@@ -34,23 +25,23 @@ def generate_report(document_text):
     "anthropic_version": "bedrock-2023-05-31"
     })
 
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-5-sonnet-20240620-v1:0")
+    response = bedrock.invoke_model(body=body, modelId=config['model']['ingest'])
 
     response_body = json.loads(response.get("body").read())
     return response_body.get("content")[0].get("text")
 
 
 def generate_embedding(passage):
-    embeddings_client = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0", region_name="your_aws_region")
+    embeddings_client = BedrockEmbeddings(model_id=config['model']['embedding'], region_name=config['region'])
 
     embedding = embeddings_client.embed_query(passage)
     return (embedding)
 
 
 def insert_into_opensearch(document):
-    region = 'your_aws_region'
+    region = config['region']
     service = 'aoss'
-    host = 'ouv6ulfktpkqvgekbhd3.your_aws_region.aoss.amazonaws.com'
+    host = config['opensearch_endpoint']
 
     session = boto3.Session()
     credentials = session.get_credentials()
@@ -65,7 +56,7 @@ def insert_into_opensearch(document):
     )
 
     response = client.index(
-        index="helpdesk-index",
+        index=config['opensearch_index'],
         body=document
     )
 
