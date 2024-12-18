@@ -1,0 +1,14 @@
+opensearch_endpoint: ouv6ulfktpkqvgekbhd3.your_aws_region.aoss.amazonaws.com
+opensearch_index: helpdesk-index
+
+# The Bedrock Model IDs for each function
+model:
+  chat: anthropic.claude-3-5-sonnet-20241022-v2:0
+  flag_raiser: anthropic.claude-3-sonnet-20240229-v1:0
+  summary: anthropic.claude-3-haiku-20240307-v1:0
+  category_generation: anthropic.claude-3-haiku-20240307-v1:0
+  redirect: anthropic.claude-3-haiku-20240307-v1:0
+
+guardrail_id: your_guardrail_id
+guardrail_version: "2"
+region: your_aws_region

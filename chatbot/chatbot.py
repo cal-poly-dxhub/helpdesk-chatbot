@@ -12,6 +12,11 @@ from datetime import datetime
 import csv
 import os
 import logging
+import yaml
+
+# Load Config
+with open('config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
 tokenizer = tiktoken.get_encoding("o200k_base")
 
@@ -34,6 +39,8 @@ helpdesk_info = [
 ]
 
 
+
+
 # Set up logging
 LOG_FILE = "chat_log.log"
 
@@ -53,6 +60,8 @@ logging.getLogger('boto3').setLevel(logging.CRITICAL)
 logging.getLogger('boto3').propagate = False
 logging.getLogger('botocore').setLevel(logging.CRITICAL)
 logging.getLogger('botocore').propagate = False
+logging.getLogger('opensearch').setLevel(logging.CRITICAL)
+logging.getLogger('opensearch').propagate = False
 
 def log_chat(chat):
     role = chat.get("role", "unknown")
@@ -301,14 +310,15 @@ def main():
             simulated_user_input = "Let's get started."
             passage = st.session_state.selectedIssue['_source']['passage']
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
-            invokeModel(simulated_user_input, f"{st.session_state.issueSolvePrompt} [{passage}]")
+            invokeModel(simulated_user_input, st, f"{st.session_state.issueSolvePrompt} [{passage}]")
+            
             st.session_state.messages.append({"role": "Administrator", "content": f"{st.session_state.issueSolvePrompt} [{passage}]"})
         elif st.session_state.chooseStepStyleMode:
             simulated_user_input = "Ok"
-            invokeModel(simulated_user_input,st.session_state.chooseStepStylePrompt)
+            invokeModel(simulated_user_input, st, st.session_state.chooseStepStylePrompt)
             st.session_state.messages.append({"role": "Administrator", "content": st.session_state.chooseStepStylePrompt})
         else:
-            invokeModel(simulated_user_input, st.session_state.startingPrompt)
+            invokeModel(simulated_user_input, st, st.session_state.startingPrompt)
             st.session_state.messages.append({"role": "Administrator", "content": st.session_state.startingPrompt})
 
     if st.session_state.chooseStepStyleMode:
@@ -321,7 +331,7 @@ def main():
 
             with st.chat_message("user"):
                 st.markdown(prompt)
-            invokeModel(prompt)
+            invokeModel(prompt, st)
 
     elif st.session_state.diagnoseMode:
         if prompt := st.chat_input(f"How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?"):
@@ -336,7 +346,7 @@ def main():
                 st.markdown(prompt)
             passage = st.session_state.selectedIssue['_source']['passage']
             # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
-            invokeModel(prompt, f"[{passage}]")
+            invokeModel(prompt, st, f"[{passage}]")
 
     elif st.session_state.issueResolved:
         if st.button("New Chat"):
@@ -349,7 +359,7 @@ def main():
             if message['role'] != "Administrator":
                 convo += f"{message} \n"
         if len(st.session_state.pills) == 0:
-            st.session_state.pills = generate_tags(f"{str(convo)}")
+            st.session_state.pills = generate_tags(st, f"{str(convo)}")
         actualTagList = ast.literal_eval(st.session_state.pills)
 
         selected_category = st.pills("Select one or more categories that best match your issue:", options=actualTagList,selection_mode="multi")
@@ -375,7 +385,7 @@ def main():
             if message['role'] != "Administrator":
                 convo += f"{message} \n"
         if len(st.session_state.pills) == 0:
-            st.session_state.pills = generate_tags(f"{str(convo)}")
+            st.session_state.pills = generate_tags(st, f"{str(convo)}")
         actualTagList = ast.literal_eval(st.session_state.pills)
 
         selected_category = st.pills("Select a category:", options=actualTagList,selection_mode="multi")
@@ -420,8 +430,6 @@ def main():
                     print("No redirect found")
                     helpdesk = st.session_state.currentHelpdesk
 
-                print(redirect_info)
-
                 st.session_state.output_tokens += len(tokenizer.encode(redirect_info))
 
                 if helpdesk in helpdesk_list and helpdesk != st.session_state.currentHelpdesk:
@@ -430,158 +438,7 @@ def main():
                     with st.chat_message("assistant"):
                         st.write(f"Redirecting to the {helpdesk}. {reasoning}")
                 else:
-                    invokeModel(prompt)
-
-def profanity_check(text):
-    bedrock_session = boto3.session.Session()
-    client = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
-
-    response = client.apply_guardrail(
-        guardrailIdentifier='your_guardrail_id',
-        guardrailVersion='2',
-        source='INPUT',
-        content=[
-            {
-                'text': {
-                    'text': text,
-                    'qualifiers': [
-                        'guard_content',
-                    ]
-                }
-            },
-        ]
-    )
-    action = response.get('action', '')
-
-    return True if action == "GUARDRAIL_INTERVENED" else False
-
-
-def invokeModel(prompt, extraInstructions=""):
-    # role_to_assume = 'aws_account_arn'    
-    # # Use STS to assume role  
-    # credentials = boto3.client('sts').assume_role(  
-    #     RoleArn=role_to_assume,  
-    #     RoleSessionName='RoleBSession'  
-    # )['Credentials']  
-    # # Create Bedrock client with temporary credentials  
-    # bedrock_session = boto3.session.Session(  
-    #     aws_access_key_id=credentials['AccessKeyId'],  
-    #     aws_secret_access_key=credentials['SecretAccessKey'],  
-    #     aws_session_token=credentials['SessionToken']  
-    # )  
-    bedrock_session = boto3.session.Session()
-    client = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
-    model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
-
-    chatHistory = ""
-    for m in st.session_state.messages:
-        chatHistory += f"{m['role']} : {m['content']}\n"
-
-    adminContent = [{"type": "text", "text": f"{extraInstructions} \n Chat History: {chatHistory}"}]
-    userContent = [{"type": "text", "text": f"{prompt}"}]
-
-    native_request = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1000,
-        "temperature": 0.7,
-        "amazon-bedrock-guardrailConfig": {
-            "streamProcessingMode": "ASYNCHRONOUS"
-        },
-        "messages": [
-            {
-                "role": "user",
-                "content": f"Administrator: {adminContent} User: {userContent} Assistant:"
-            },
-        ],
-    }
-    
-    request = json.dumps(native_request)
-    tokens = len(tokenizer.encode(request))
-    st.session_state.input_tokens += tokens
-
-    streaming_response = client.invoke_model_with_response_stream(
-        modelId=model_id, 
-        body=request,
-        guardrailIdentifier="your_guardrail_id",
-        guardrailVersion="2"
-    )
-
-    # Generator function to yield text chunks for `st.write_stream`
-    def generate_response():
-        full_response = ""
-        show_text = True
-        for event in streaming_response["body"]:
-            chunk = json.loads(event["chunk"]["bytes"].decode('utf-8'))
-            if chunk["type"] == "content_block_delta":
-                text_delta = chunk["delta"].get("text", "")
-                full_response += text_delta
-                    
-                if show_text:
-                    yield text_delta  # Yielding for streaming
-
-
-        chat = {"role": "assistant", "content": full_response}
-        st.session_state.messages.append(chat)
-        log_chat(chat)
-
-
-        if "Identified the issue -" in full_response:
-            st.session_state.issueFound = True
-            st.session_state.first_interaction = True
-            st.session_state.chooseStepStyleMode = True
-            findRelevantIssue(prompt)
-
-        if "Got it - multiple steps." in full_response:
-            st.session_state.stepStyle = 'm'
-            st.session_state.chooseStepStyleMode = False
-            setDiagnoseMode()
-
-        if "Got it - comprehensive guide." in full_response:
-            st.session_state.stepStyle = 'g'
-            st.session_state.chooseStepStyleMode = False
-            setDiagnoseMode()
-
-    with st.chat_message("assistant", avatar="usda-social-profile-round.png"):
-        st.write_stream(generate_response())
-    
-    fullResponse = st.session_state.messages[-1]['content']
-
-    if st.session_state.diagnoseMode:
-        flag = flagRaiser(prompt, fullResponse)
-
-        print(f"\n{flag=}")
-
-        if "innapropriate" in flag:
-            st.toast('Please refrain from profanity usage', icon="👮")
-
-        if "Issue Resolved" in flag:
-            st.session_state.diagnoseMode = False
-            st.session_state.issueResolved = True
-            st.session_state.first_interaction = False
-            st.rerun()
-        
-        if "Human request" in flag:
-            st.session_state.redirectRequests += 1
-            if st.session_state.redirectRequests >= st.session_state.humanRedirectThreshold:
-                st.session_state.diagnoseMode = False
-                st.session_state.humanRedirect = True
-                st.session_state.first_interaction = False
-            st.rerun()
-
-        if "Redirect request" in flag:
-            st.session_state.diagnoseMode = False
-            st.session_state.humanRedirect = True
-            st.session_state.first_interaction = False
-            st.rerun()
-
-    
-    tokens = len(tokenizer.encode(fullResponse))
-    st.session_state.output_tokens += tokens
-
-    st.session_state.total_cost += (
-        st.session_state.input_tokens * SONNET_INPUT_COST_PER_TOKEN + 
-        st.session_state.output_tokens * SONNET_OUTPUT_COST_PER_TOKEN
-    )
+                    invokeModel(prompt, st)
 
 def findRelevantIssue(prompt):
     embedding = embed(prompt)
@@ -647,67 +504,6 @@ def setDiagnoseMode():
     st.session_state.first_interaction = True 
     st.rerun()
 
-
-
-def flagRaiser(user_query, lastMessage):
-    role_to_assume = 'aws_account_arn'    
-
-    prompt = f"""
-    Evaluate the content of the provided messages carefully. 
-    Based on the following criteria, respond only with the exact matching string (without any additional text or explanation):
-    - If the *User's message* explicitly requests to speak to a human, respond with: "Human request".
-    - If the *User's message* or *System's message* suggests that the bot cannot assist the user any further, respond with: "Redirect request".
-    - If the *User's message* or *System's message* EXPLICITLY indicates that the entire user's issue has been resolved, and NOT that a single step has been resolved, respond with: "Issue Resolved". In order for this to be "Issue Resolved" the system must not have any more steps to talk about.
-    - If neither message matches any of the above conditions, respond with: "NA".
-    - If the *User's message* or *System's message* contains profanity or personally identifiable information, still use the above criteria to respond with the appropriate string, but separated by a ;, respond with "innapropriate" (example: "NA;innapropriate").
-
-    User's message to evaluate: {user_query}
-    System's message to evaluate: {lastMessage}
-    """
-
-
-    # Use STS to assume role  
-    credentials = boto3.client('sts').assume_role(  
-        RoleArn=role_to_assume,  
-        RoleSessionName='RoleBSession'  
-    )['Credentials']  
-
-    # Create Bedrock client with temporary credentials  
-    bedrock_session = boto3.session.Session(  
-        aws_access_key_id=credentials['AccessKeyId'],  
-        aws_secret_access_key=credentials['SecretAccessKey'],  
-        aws_session_token=credentials['SessionToken']  
-    )  
-
-    bedrock = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
-
-    body = json.dumps({
-    "max_tokens": 1024,
-    "messages": [{"role": "user", "content": prompt}],
-    "anthropic_version": "bedrock-2023-05-31"
-    })
-
-    tokens = len(tokenizer.encode(body))
-    st.session_state.inputFlagTokens += tokens
-
-    # response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-sonnet-20240229-v1:0")
-
-    response_body = json.loads(response.get("body").read())
-    text = response_body.get("content")[0].get("text")
-    tokens = len(tokenizer.encode(text))
-    st.session_state.outputFlagTokens += tokens
-    st.session_state.flagRaiserCost += (
-        st.session_state.inputFlagTokens * SONNET_INPUT_COST_PER_TOKEN + 
-        st.session_state.outputFlagTokens * SONNET_OUTPUT_COST_PER_TOKEN
-    )
-    return text
-
-
-
-
-
-
 def generate_summary(document_text):
     role_to_assume = 'aws_account_arn'    
 
@@ -718,20 +514,8 @@ def generate_summary(document_text):
 
     prompt += document_text
 
-    # Use STS to assume role  
-    credentials = boto3.client('sts').assume_role(  
-        RoleArn=role_to_assume,  
-        RoleSessionName='RoleBSession'  
-    )['Credentials']  
-
-    # Create Bedrock client with temporary credentials  
-    bedrock_session = boto3.session.Session(  
-        aws_access_key_id=credentials['AccessKeyId'],  
-        aws_secret_access_key=credentials['SecretAccessKey'],  
-        aws_session_token=credentials['SessionToken']  
-    )  
-
-    bedrock = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
+    bedrock_session = boto3.session.Session()
+    bedrock = bedrock_session.client("bedrock-runtime", region_name=config['region'])
 
     body = json.dumps({
     "max_tokens": 1024,
@@ -742,56 +526,7 @@ def generate_summary(document_text):
     tokens = len(tokenizer.encode(body))
     st.session_state.inputSummaryTokens += tokens
 
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
-
-    response_body = json.loads(response.get("body").read())
-    text = response_body.get("content")[0].get("text")
-    tokens = len(tokenizer.encode(text))
-    st.session_state.outputSummaryTokens += tokens
-    st.session_state.summaryCost += (
-        st.session_state.inputSummaryTokens * HAIKU_INPUT_COST_PER_TOKEN + 
-        st.session_state.outputSummaryTokens * HAIKU_OUTPUT_COST_PER_TOKEN
-    )
-    return text
-
-
-
-def generate_tags(document_text):
-    role_to_assume = 'aws_account_arn'    
-
-    prompt = f"""
-    From the contents of this conversation,
-    generate a list of possible helpdesk one-word 'categories.' 
-    Examples include but are not limited to "Printer", "Wi-Fi", "USDA System", "Work Laptop", "Website".
-    Return nothing but a valid list object containing of categorical tags
-    in the following format: ['category 1','category 2']
-    Here is the conversation: {document_text}
-    """
-    # Use STS to assume role  
-    credentials = boto3.client('sts').assume_role(  
-        RoleArn=role_to_assume,  
-        RoleSessionName='RoleBSession'  
-    )['Credentials']  
-
-    # Create Bedrock client with temporary credentials  
-    bedrock_session = boto3.session.Session(  
-        aws_access_key_id=credentials['AccessKeyId'],  
-        aws_secret_access_key=credentials['SecretAccessKey'],  
-        aws_session_token=credentials['SessionToken']  
-    )  
-
-    bedrock = bedrock_session.client("bedrock-runtime", region_name="your_aws_region")
-
-    body = json.dumps({
-    "max_tokens": 1024,
-    "messages": [{"role": "user", "content": prompt}],
-    "anthropic_version": "bedrock-2023-05-31"
-    })
-
-    tokens = len(tokenizer.encode(body))
-    st.session_state.inputSummaryTokens += tokens
-
-    response = bedrock.invoke_model(body=body, modelId="anthropic.claude-3-haiku-20240307-v1:0")
+    response = bedrock.invoke_model(body=body, modelId=config['model']['summary'])
 
     response_body = json.loads(response.get("body").read())
     text = response_body.get("content")[0].get("text")
