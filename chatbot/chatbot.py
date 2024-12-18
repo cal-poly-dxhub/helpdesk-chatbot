@@ -12,11 +12,24 @@ from datetime import datetime
 import os
 import logging
 from logging_config import log_chat, save_results
+import streamlit_authenticator as stauth
 import yaml
 
 # Load Config   
 with open('../config.yaml', 'r') as file:
     config = yaml.safe_load(file)
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+)
+
+try:
+    authenticator.login()
+except Exception as e:
+    print(e)
 
 tokenizer = tiktoken.get_encoding("o200k_base")
 
@@ -218,156 +231,6 @@ def filter_and_write_message(prompt):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-def main():
-    # hide top bar
-    hide_decoration_bar_style = ''' <style> header {visibility: hidden;} </style> ''' 
-    st.markdown(hide_decoration_bar_style, unsafe_allow_html=True)
-    st.markdown("""
-    <style>
-    textarea[data-testid="stChatInputTextArea"]::placeholder {
-        color: #c0b7b6 !important; /* Replace with your desired color */
-        opacity: 1 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-
-    st.title("USDA Help Desk Chatbot")        
-
-    sessionStateInit()
-    if st.session_state.stepStyle != "":
-        if st.session_state.stepStyle == 'g':
-            st.session_state.issueSolvePrompt = st.session_state.issueSolvePromptGuide
-
-    # True means the service is working
-    services_status = {
-        "Tier One Helpdesk": True,
-        "Tier Two Helpdesk": False,
-    }
-
-    def status_indicator(is_up):
-        if is_up:
-            return ":large_green_circle:"
-        else:
-            return ":red_circle:"
-
-
-
-    with st.sidebar:
-        st.write("   \n")    
-        for service, status in services_status.items():
-            indicator = status_indicator(status)
-            status_text = "In Service" if status else "Out of Service"
-            st.markdown(f"{indicator} **{service}** - {status_text}")
-
-        st.write("   \n")    
-        st.write("   \n")    
-
-        st.write(f"Total Conversation Cost: {round(st.session_state.total_cost,4)}")
-        st.write("   \n")    
-        st.write("   \n")    
-
-
-        st.session_state.warningThreshold = st.slider(label="Set the cost warning threshold",min_value=0.1,max_value=100.0,step=.1,value=10.0)
-        st.session_state.warningThreshold /= 100
-        st.write(f"Current Warning Threshold: {round(st.session_state.warningThreshold,4)}")
-        st.write("   \n")    
-
-        st.session_state.terminateThreshold = st.slider(label="Set the cost terminate threshold",min_value=0.2,max_value=150.0,step=.1,value=45.0)
-        st.session_state.terminateThreshold /= 100
-        st.write(f"Current Terminate Threshold: {round(st.session_state.terminateThreshold,4)}")
-        st.write("   \n")    
-
-        st.session_state.humanRedirectThreshold = st.slider(label="Set the human redirect threshold",min_value=1,max_value=5,step=1,value=2)
-        if st.button("Reset App"):
-            reset_session()
-
-    for message in st.session_state.messages:
-        if message['role'] == "Administrator":
-            pass
-        elif message['role'] == "user":
-            with st.chat_message(message['role']):
-                st.markdown(message["content"])
-        else:
-            with st.chat_message(message["role"], avatar="usda-social-profile-round.png"):
-                st.markdown(message["content"])
-    
-
-    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= st.session_state.warningThreshold) and not (st.session_state.costWarningHappened)):
-        st.toast('This conversation is starting to take a long time. Consider speaking to a help desk associate.', icon="⚠️")
-        st.session_state.costWarningHappened = True
-    
-    if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= st.session_state.terminateThreshold) and not (st.session_state.humanRedirect)):
-        st.session_state.tooHighCost = True
-        st.session_state.diagnoseMode = False
-        st.session_state.humanRedirect = True
-        st.session_state.first_interaction = False
-        st.rerun()
-
-    if st.session_state.first_interaction:
-        st.session_state.first_interaction = False 
-        simulated_user_input = "Hi"
-        if st.session_state.diagnoseMode:
-            simulated_user_input = "Let's get started."
-            passage = st.session_state.selectedIssue['_source']['passage']
-            invokeModel(simulated_user_input, st, f"{st.session_state.issueSolvePrompt} [{passage}]")
-            
-            st.session_state.messages.append({"role": "Administrator", "content": f"{st.session_state.issueSolvePrompt} [{passage}]"})
-        elif st.session_state.chooseStepStyleMode:
-            simulated_user_input = "Ok"
-            invokeModel(simulated_user_input, st, st.session_state.chooseStepStylePrompt)
-            st.session_state.messages.append({"role": "Administrator", "content": st.session_state.chooseStepStylePrompt})
-        else:
-            invokeModel(simulated_user_input, st, st.session_state.startingPrompt)
-            st.session_state.messages.append({"role": "Administrator", "content": st.session_state.startingPrompt})
-
-    if st.session_state.chooseStepStyleMode:
-        if prompt := st.chat_input('Choose a step style.'):
-            filter_and_write_message(prompt)
-            invokeModel(prompt, st)
-
-    elif st.session_state.diagnoseMode:
-        if prompt := st.chat_input(f"How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?"):
-            filter_and_write_message(prompt)
-            passage = st.session_state.selectedIssue['_source']['passage']
-            invokeModel(prompt, st, f"[{passage}]")
-
-    elif st.session_state.issueResolved:
-        get_feedback()
-
-    elif st.session_state.humanRedirect:
-        if st.session_state.tooHighCost:
-            st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
-        get_feedback()
-
-    elif st.session_state.no_similar_issues:
-        st.write(f"""There were no similar help desk issue
-             documents found. Redirecting you to a help desk associate.""")
-    else:
-        if prompt := st.chat_input('How can I help you today?'):
-
-            filter_and_write_message(prompt)
-
-            if not st.session_state.selectedIssue:
-                st.session_state.input_tokens += len(tokenizer.encode(prompt))
-
-                redirect_info = decide_redirect(prompt, st.session_state.currentHelpdesk, helpdesk_info)
-                try:
-                    helpdesk = re.search(r"<helpdesk>(.*?)</helpdesk>", redirect_info).group(1)
-                except:
-                    print("No redirect found")
-                    helpdesk = st.session_state.currentHelpdesk
-
-                st.session_state.output_tokens += len(tokenizer.encode(redirect_info))
-
-                if helpdesk in helpdesk_list and helpdesk != st.session_state.currentHelpdesk:
-                    reasoning = re.search(r"<reasoning>(.*?)</reasoning>", redirect_info).group(1)
-
-                    with st.chat_message("assistant"):
-                        st.write(f"Redirecting to the {helpdesk}. {reasoning}")
-                else:
-                    invokeModel(prompt, st)
-
 def filter_docs(results, min_score=0.7, relative_threshold=0.1):
     # Filter out documents below the absolute score threshold
     filtered_results = [result for result in results if result['_score'] >= min_score]
@@ -393,11 +256,10 @@ def filter_docs(results, min_score=0.7, relative_threshold=0.1):
 
     return final_results
 
-
 def setDiagnoseMode():
-    st.session_state.diagnoseMode = True
-    st.session_state.first_interaction = True 
-    st.rerun()
+        st.session_state.diagnoseMode = True
+        st.session_state.first_interaction = True 
+        st.rerun()
 
 def noSimilarIssues():
     st.session_state.no_similar_issues = True
@@ -432,117 +294,274 @@ def findRelevantIssue(prompt):
             )
 
 def invokeModel(prompt, st, extraInstructions=""):
-    bedrock_session = boto3.session.Session()
-    client = bedrock_session.client("bedrock-runtime", region_name=config['region'])
-    model_id = config['model']['chat']
+        bedrock_session = boto3.session.Session()
+        client = bedrock_session.client("bedrock-runtime", region_name=config['region'])
+        model_id = config['model']['chat']
 
-    chatHistory = ""
-    for m in st.session_state.messages:
-        chatHistory += f"{m['role']} : {m['content']}\n"
+        chatHistory = ""
+        for m in st.session_state.messages:
+            chatHistory += f"{m['role']} : {m['content']}\n"
 
-    adminContent = [{"type": "text", "text": f"{extraInstructions} \n Chat History: {chatHistory}"}]
-    userContent = [{"type": "text", "text": f"{prompt}"}]
+        adminContent = [{"type": "text", "text": f"{extraInstructions} \n Chat History: {chatHistory}"}]
+        userContent = [{"type": "text", "text": f"{prompt}"}]
 
-    native_request = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1000,
-        "temperature": 0.7,
-        "amazon-bedrock-guardrailConfig": {
-            "streamProcessingMode": "ASYNCHRONOUS"
-        },
-        "messages": [
-            {
-                "role": "user",
-                "content": f"Administrator: {adminContent} User: {userContent} Assistant:"
+        native_request = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "amazon-bedrock-guardrailConfig": {
+                "streamProcessingMode": "ASYNCHRONOUS"
             },
-        ],
-    }
-    
-    request = json.dumps(native_request)
-    tokens = len(tokenizer.encode(request))
-    st.session_state.input_tokens += tokens
-
-    streaming_response = client.invoke_model_with_response_stream(
-        modelId=model_id, 
-        body=request,
-        guardrailIdentifier=config['guardrail_id'],
-        guardrailVersion=config['guardrail_version']
-    )
-
-    # Generator function to yield text chunks for `st.write_stream`
-    def generate_response():
-        full_response = ""
-        show_text = True
-        for event in streaming_response["body"]:
-            chunk = json.loads(event["chunk"]["bytes"].decode('utf-8'))
-            if chunk["type"] == "content_block_delta":
-                text_delta = chunk["delta"].get("text", "")
-                full_response += text_delta
-                    
-                if show_text:
-                    yield text_delta  # Yielding for streaming
-
-        chat = {"role": "assistant", "content": full_response}
-        st.session_state.messages.append(chat)
-        log_chat(chat)
-
-        if "Identified the issue -" in full_response:
-            st.session_state.issueFound = True
-            st.session_state.first_interaction = True
-            st.session_state.chooseStepStyleMode = True
-            findRelevantIssue(prompt)
-
-        if "Got it - multiple steps." in full_response:
-            st.session_state.stepStyle = 'm'
-            st.session_state.chooseStepStyleMode = False
-            setDiagnoseMode()
-
-        if "Got it - comprehensive guide." in full_response:
-            st.session_state.stepStyle = 'g'
-            st.session_state.chooseStepStyleMode = False
-            setDiagnoseMode()
-
-    with st.chat_message("assistant", avatar="usda-social-profile-round.png"):
-        st.write_stream(generate_response())
-    
-    fullResponse = st.session_state.messages[-1]['content']
-
-    if st.session_state.diagnoseMode:
-        flag = flagRaiser(prompt, fullResponse, st)
-
-        print(f"\n{flag=}")
-
-        if "innapropriate" in flag:
-            st.toast('Please refrain from profanity usage', icon="👮")
-
-        if "Issue Resolved" in flag:
-            st.session_state.diagnoseMode = False
-            st.session_state.issueResolved = True
-            st.session_state.first_interaction = False
-            st.rerun()
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Administrator: {adminContent} User: {userContent} Assistant:"
+                },
+            ],
+        }
         
-        if "Human request" in flag:
-            st.session_state.redirectRequests += 1
-            if st.session_state.redirectRequests >= st.session_state.humanRedirectThreshold:
+        request = json.dumps(native_request)
+        tokens = len(tokenizer.encode(request))
+        st.session_state.input_tokens += tokens
+
+        streaming_response = client.invoke_model_with_response_stream(
+            modelId=model_id, 
+            body=request,
+            guardrailIdentifier=config['guardrail_id'],
+            guardrailVersion=config['guardrail_version']
+        )
+
+        # Generator function to yield text chunks for `st.write_stream`
+        def generate_response():
+            full_response = ""
+            show_text = True
+            for event in streaming_response["body"]:
+                chunk = json.loads(event["chunk"]["bytes"].decode('utf-8'))
+                if chunk["type"] == "content_block_delta":
+                    text_delta = chunk["delta"].get("text", "")
+                    full_response += text_delta
+                        
+                    if show_text:
+                        yield text_delta  # Yielding for streaming
+
+            chat = {"role": "assistant", "content": full_response}
+            st.session_state.messages.append(chat)
+            log_chat(chat)
+
+            if "Identified the issue -" in full_response:
+                st.session_state.issueFound = True
+                st.session_state.first_interaction = True
+                st.session_state.chooseStepStyleMode = True
+                findRelevantIssue(prompt)
+
+            if "Got it - multiple steps." in full_response:
+                st.session_state.stepStyle = 'm'
+                st.session_state.chooseStepStyleMode = False
+                setDiagnoseMode()
+
+            if "Got it - comprehensive guide." in full_response:
+                st.session_state.stepStyle = 'g'
+                st.session_state.chooseStepStyleMode = False
+                setDiagnoseMode()
+
+        with st.chat_message("assistant", avatar="usda-social-profile-round.png"):
+            st.write_stream(generate_response())
+        
+        fullResponse = st.session_state.messages[-1]['content']
+
+        if st.session_state.diagnoseMode:
+            flag = flagRaiser(prompt, fullResponse, st)
+
+            print(f"\n{flag=}")
+
+            if "innapropriate" in flag:
+                st.toast('Please refrain from profanity usage', icon="👮")
+
+            if "Issue Resolved" in flag:
+                st.session_state.diagnoseMode = False
+                st.session_state.issueResolved = True
+                st.session_state.first_interaction = False
+                st.rerun()
+            
+            if "Human request" in flag:
+                st.session_state.redirectRequests += 1
+                if st.session_state.redirectRequests >= st.session_state.humanRedirectThreshold:
+                    st.session_state.diagnoseMode = False
+                    st.session_state.humanRedirect = True
+                    st.session_state.first_interaction = False
+                st.rerun()
+
+            if "Redirect request" in flag:
                 st.session_state.diagnoseMode = False
                 st.session_state.humanRedirect = True
                 st.session_state.first_interaction = False
-            st.rerun()
+                st.rerun()
 
-        if "Redirect request" in flag:
+        
+        tokens = len(tokenizer.encode(fullResponse))
+        st.session_state.output_tokens += tokens
+
+        st.session_state.total_cost += (
+            st.session_state.input_tokens * SONNET_INPUT_COST_PER_TOKEN + 
+            st.session_state.output_tokens * SONNET_OUTPUT_COST_PER_TOKEN
+        )
+
+def main():
+    if st.session_state['authentication_status']:
+        authenticator.logout()
+        # hide top bar
+        hide_decoration_bar_style = ''' <style> header {visibility: hidden;} </style> ''' 
+        st.markdown(hide_decoration_bar_style, unsafe_allow_html=True)
+        st.markdown("""
+        <style>
+        textarea[data-testid="stChatInputTextArea"]::placeholder {
+            color: #c0b7b6 !important; /* Replace with your desired color */
+            opacity: 1 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+
+        st.title("USDA Help Desk Chatbot")        
+
+        sessionStateInit()
+        if st.session_state.stepStyle != "":
+            if st.session_state.stepStyle == 'g':
+                st.session_state.issueSolvePrompt = st.session_state.issueSolvePromptGuide
+
+        # True means the service is working
+        services_status = {
+            "Tier One Helpdesk": True,
+            "Tier Two Helpdesk": False,
+        }
+
+        def status_indicator(is_up):
+            if is_up:
+                return ":large_green_circle:"
+            else:
+                return ":red_circle:"
+
+
+
+        with st.sidebar:
+            st.write("   \n")    
+            for service, status in services_status.items():
+                indicator = status_indicator(status)
+                status_text = "In Service" if status else "Out of Service"
+                st.markdown(f"{indicator} **{service}** - {status_text}")
+
+            st.write("   \n")    
+            st.write("   \n")    
+
+            st.write(f"Total Conversation Cost: {round(st.session_state.total_cost,4)}")
+            st.write("   \n")    
+            st.write("   \n")    
+
+
+            st.session_state.warningThreshold = st.slider(label="Set the cost warning threshold",min_value=0.1,max_value=100.0,step=.1,value=10.0)
+            st.session_state.warningThreshold /= 100
+            st.write(f"Current Warning Threshold: {round(st.session_state.warningThreshold,4)}")
+            st.write("   \n")    
+
+            st.session_state.terminateThreshold = st.slider(label="Set the cost terminate threshold",min_value=0.2,max_value=150.0,step=.1,value=45.0)
+            st.session_state.terminateThreshold /= 100
+            st.write(f"Current Terminate Threshold: {round(st.session_state.terminateThreshold,4)}")
+            st.write("   \n")    
+
+            st.session_state.humanRedirectThreshold = st.slider(label="Set the human redirect threshold",min_value=1,max_value=5,step=1,value=2)
+            if st.button("Reset App"):
+                reset_session()
+
+        for message in st.session_state.messages:
+            if message['role'] == "Administrator":
+                pass
+            elif message['role'] == "user":
+                with st.chat_message(message['role']):
+                    st.markdown(message["content"])
+            else:
+                with st.chat_message(message["role"], avatar="usda-social-profile-round.png"):
+                    st.markdown(message["content"])
+        
+
+        if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= st.session_state.warningThreshold) and not (st.session_state.costWarningHappened)):
+            st.toast('This conversation is starting to take a long time. Consider speaking to a help desk associate.', icon="⚠️")
+            st.session_state.costWarningHappened = True
+        
+        if (((st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost) >= st.session_state.terminateThreshold) and not (st.session_state.humanRedirect)):
+            st.session_state.tooHighCost = True
             st.session_state.diagnoseMode = False
             st.session_state.humanRedirect = True
             st.session_state.first_interaction = False
             st.rerun()
 
-    
-    tokens = len(tokenizer.encode(fullResponse))
-    st.session_state.output_tokens += tokens
+        if st.session_state.first_interaction:
+            st.session_state.first_interaction = False 
+            simulated_user_input = "Hi"
+            if st.session_state.diagnoseMode:
+                simulated_user_input = "Let's get started."
+                passage = st.session_state.selectedIssue['_source']['passage']
+                invokeModel(simulated_user_input, st, f"{st.session_state.issueSolvePrompt} [{passage}]")
+                
+                st.session_state.messages.append({"role": "Administrator", "content": f"{st.session_state.issueSolvePrompt} [{passage}]"})
+            elif st.session_state.chooseStepStyleMode:
+                simulated_user_input = "Ok"
+                invokeModel(simulated_user_input, st, st.session_state.chooseStepStylePrompt)
+                st.session_state.messages.append({"role": "Administrator", "content": st.session_state.chooseStepStylePrompt})
+            else:
+                invokeModel(simulated_user_input, st, st.session_state.startingPrompt)
+                st.session_state.messages.append({"role": "Administrator", "content": st.session_state.startingPrompt})
 
-    st.session_state.total_cost += (
-        st.session_state.input_tokens * SONNET_INPUT_COST_PER_TOKEN + 
-        st.session_state.output_tokens * SONNET_OUTPUT_COST_PER_TOKEN
-    )
+        if st.session_state.chooseStepStyleMode:
+            if prompt := st.chat_input('Choose a step style.'):
+                filter_and_write_message(prompt)
+                invokeModel(prompt, st)
+
+        elif st.session_state.diagnoseMode:
+            if prompt := st.chat_input(f"How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?"):
+                filter_and_write_message(prompt)
+                passage = st.session_state.selectedIssue['_source']['passage']
+                invokeModel(prompt, st, f"[{passage}]")
+
+        elif st.session_state.issueResolved:
+            get_feedback()
+
+        elif st.session_state.humanRedirect:
+            if st.session_state.tooHighCost:
+                st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
+            get_feedback()
+
+        elif st.session_state.no_similar_issues:
+            st.write(f"""There were no similar help desk issue
+                documents found. Redirecting you to a help desk associate.""")
+        else:
+            if prompt := st.chat_input('How can I help you today?'):
+
+                filter_and_write_message(prompt)
+
+                if not st.session_state.selectedIssue:
+                    st.session_state.input_tokens += len(tokenizer.encode(prompt))
+
+                    redirect_info = decide_redirect(prompt, st.session_state.currentHelpdesk, helpdesk_info)
+                    try:
+                        helpdesk = re.search(r"<helpdesk>(.*?)</helpdesk>", redirect_info).group(1)
+                    except:
+                        print("No redirect found")
+                        helpdesk = st.session_state.currentHelpdesk
+
+                    st.session_state.output_tokens += len(tokenizer.encode(redirect_info))
+
+                    if helpdesk in helpdesk_list and helpdesk != st.session_state.currentHelpdesk:
+                        reasoning = re.search(r"<reasoning>(.*?)</reasoning>", redirect_info).group(1)
+
+                        with st.chat_message("assistant"):
+                            st.write(f"Redirecting to the {helpdesk}. {reasoning}")
+                    else:
+                        invokeModel(prompt, st)
+
+    elif st.session_state['authentication_status'] is False:
+        st.error('Username/password is incorrect')
+    elif st.session_state['authentication_status'] is None:
+        st.warning('Please enter your username and password')
 
 if __name__ == "__main__":
     main()
