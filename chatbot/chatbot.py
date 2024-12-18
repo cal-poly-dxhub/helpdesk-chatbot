@@ -8,6 +8,10 @@ from search_utils import embed
 import tiktoken
 import ast
 from llm_utils import *
+from datetime import datetime
+import csv
+import os
+import logging
 
 tokenizer = tiktoken.get_encoding("o200k_base")
 
@@ -30,6 +34,32 @@ helpdesk_info = [
 ]
 
 
+# Set up logging
+LOG_FILE = "chat_log.log"
+
+# Create or append to the log file
+if not os.path.exists(LOG_FILE):
+    with open(LOG_FILE, "w"):
+        pass
+
+logging.basicConfig(
+    filename=LOG_FILE, 
+    level=logging.INFO, 
+    format="%(asctime)s - %(message)s", 
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+logging.getLogger('boto3').setLevel(logging.CRITICAL)
+logging.getLogger('boto3').propagate = False
+logging.getLogger('botocore').setLevel(logging.CRITICAL)
+logging.getLogger('botocore').propagate = False
+
+def log_chat(chat):
+    role = chat.get("role", "unknown")
+    content = chat.get("content", "")
+    logging.info(f"{role}: {content}")
+
+
 def sessionStateInit():
     if "currentHelpdesk" not in st.session_state:
         st.session_state.currentHelpdesk = "IT Helpdesk"
@@ -42,7 +72,6 @@ def sessionStateInit():
     
     if "humanRedirectThreshold" not in st.session_state:
         st.session_state.humanRedirectThreshold = 2
-
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -66,7 +95,7 @@ def sessionStateInit():
         #     st.session_state.startingPrompt = startingPromptFile.read()
         st.session_state.startingPrompt = f"""
         You are a friendly and helpful help desk assistant for the USDA.
-        You are to assist with any technical problems a user may have.
+        You are to assist with any technical problem a user may have.
         Goal:
         Find out what issue the user is currently facing.
         Instructions:
@@ -108,6 +137,16 @@ def sessionStateInit():
         If the user indicates they want a guide of steps, respond with "Got it - comprehensive guide." verbatim.
         If the user is off topic or isn't choosing between the two previously mentioned step styles, urge them to choose between those two.
         """
+
+    if "feedback" not in st.session_state:
+        st.session_state.feedback = ""
+        
+    if "stars" not in st.session_state:
+        st.session_state.stars = 0
+
+    if "start_time" not in st.session_state:
+        st.session_state.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     if "no_similar_issues" not in st.session_state:
         st.session_state.no_similar_issues = False
 
@@ -274,10 +313,11 @@ def main():
 
     if st.session_state.chooseStepStyleMode:
         if prompt := st.chat_input('Choose a step style.'):
-            if not profanity_check(prompt):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-            else:
-                st.session_state.messages.append({"role": "user", "content": "The user has entered profanity."})
+            if profanity_check(prompt):
+                prompt = "The user has entered profanity."
+            chat = {"role": "user", "content": prompt}
+            st.session_state.messages.append(chat)
+            log_chat(chat)
 
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -286,10 +326,11 @@ def main():
     elif st.session_state.diagnoseMode:
         if prompt := st.chat_input(f"How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?"):
 
-            if not profanity_check(prompt):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-            else:
-                st.session_state.messages.append({"role": "user", "content": "The user has entered profanity."})
+            if profanity_check(prompt):
+                prompt = "The user has entered profanity."
+            chat = {"role": "user", "content": prompt}
+            st.session_state.messages.append(chat)
+            log_chat(chat)
 
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -300,9 +341,9 @@ def main():
     elif st.session_state.issueResolved:
         if st.button("New Chat"):
             reset_session()
-        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
+        st.session_state.stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
         
-        feedback = st.text_input("Give me some quick feedback!")
+        st.session_state.feedback = st.text_input("Give me some quick feedback!")
         convo = ""
         for message in st.session_state.messages:
             if message['role'] != "Administrator":
@@ -313,20 +354,22 @@ def main():
 
         selected_category = st.pills("Select one or more categories that best match your issue:", options=actualTagList,selection_mode="multi")
 
+
         if st.button("Complete"):
-            if stars == 5:
+            if st.session_state.stars == 5:
                 st.balloons()
             st.write(f"""Selected Category: {selected_category}   \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
                      {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
                      {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}
                      \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.flagRaiserCost, 4)}""")
+            save_results()
 
     elif st.session_state.humanRedirect:
         if st.session_state.tooHighCost:
             st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
-        stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
+        st.session_state.stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
 
-        feedback = st.text_input("Give me some quick feedback!")
+        st.session_state.feedback = st.text_input("Give me some quick feedback!")
         convo = ""
         for message in st.session_state.messages:
             if message['role'] != "Administrator":
@@ -339,10 +382,10 @@ def main():
 
 
         if st.button("Complete"):
-            if stars == 5:
+            if st.session_state.stars == 5:
                 st.balloons()
             with st.spinner("Generating Summary..."):
-                summary = generate_summary(f"{str(convo)} *** The user also gave this feedback {feedback} and this star rating {stars} ***")
+                summary = generate_summary(f"{str(convo)} *** The user also gave this feedback {st.session_state.feedback} and this star rating {st.session_state.stars} ***")
             st.write(f"""Selected Category: {selected_category} \n\n To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
                      {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \n\nSummary Input Tokens: 
                      {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: \${round(st.session_state.summaryCost, 4)}
@@ -350,6 +393,7 @@ def main():
                      {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}  
                      \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost, 4)}
                      """)
+            save_results()
 
 
     elif st.session_state.no_similar_issues:
@@ -357,10 +401,11 @@ def main():
              documents found. Redirecting you to a help desk associate.""")
     else:
         if prompt := st.chat_input('How can I help you today?'):
-            if not profanity_check(prompt):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-            else:
-                st.session_state.messages.append({"role": "user", "content": "The user has entered profanity."})
+            if profanity_check(prompt):
+                prompt = "The user has entered profanity."
+            chat = {"role": "user", "content": prompt}
+            st.session_state.messages.append(chat)
+            log_chat(chat)
 
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -474,7 +519,12 @@ def invokeModel(prompt, extraInstructions=""):
                 if show_text:
                     yield text_delta  # Yielding for streaming
 
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+        chat = {"role": "assistant", "content": full_response}
+        st.session_state.messages.append(chat)
+        log_chat(chat)
+
+
         if "Identified the issue -" in full_response:
             st.session_state.issueFound = True
             st.session_state.first_interaction = True
@@ -752,6 +802,56 @@ def generate_tags(document_text):
         st.session_state.outputSummaryTokens * HAIKU_OUTPUT_COST_PER_TOKEN
     )
     return text
+
+def save_results():
+    end_reason = "Not resolved"
+    if st.session_state.humanRedirect:
+        end_reason = "Human Redirect"
+    elif st.session_state.issueResolved:
+        end_reason = "Issue Resolved"
+    elif st.session_state.tooHighCost:
+        end_reason = "Max Cost Exceeded"
+
+    end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    step_style = "Complete Guide" if st.session_state.stepStyle == "g" else "Individual Steps"
+
+    headers = ["Categories", "Conversation", "Total Cost", "Input Tokens",
+               "Output Tokens", "Feedback", "Stars", "End Reason", "Start Time", "End Time", "Step Style"]
+
+    messages = [entry for entry in st.session_state.messages if entry.get("role") != "Administrator"]
+
+    data = [
+        st.session_state.pills,
+        str(messages),
+        ("$" + str(st.session_state.total_cost)),
+        st.session_state.input_tokens,
+        st.session_state.output_tokens,
+        st.session_state.feedback,
+        str(st.session_state.stars),
+        end_reason,
+        str(st.session_state.start_time),
+        str(end_time),
+        step_style
+    ]
+
+    # Output file
+    output_file = "saved_chats.csv"
+
+    # Check if the file exists
+    file_exists = os.path.exists(output_file)
+
+    # Open the file in append mode
+    with open(output_file, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        # If file does not exist, write the headers first
+        if not file_exists:
+            writer.writerow(headers)
+        # Append the data
+        writer.writerow(data)
+
+    print(f"Data saved to CSV file at: {output_file}")
+
+
 
 
 
