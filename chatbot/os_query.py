@@ -2,12 +2,17 @@ import boto3
 from opensearchpy import OpenSearch,RequestsHttpConnection
 from requests_aws4auth import AWS4Auth
 from search_utils import hybrid_search
+import yaml
+
+# Load Config
+with open('config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
 
 
 def initialize_opensearch():
-    region = 'your_aws_region'
+    region = config['region']
     service = 'aoss'
-    host = "ouv6ulfktpkqvgekbhd3.your_aws_region.aoss.amazonaws.com"
+    host = config['opensearch_endpoint']
 
     credentials = boto3.Session().get_credentials()
     awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
@@ -40,7 +45,6 @@ def select_top_documents(hybrid_results, max_docs=10):
     else:
         return selected_docs
 
-
 def getSimilarDocs(prompt,embedding):
     osClient = initialize_opensearch()
 
@@ -67,8 +71,8 @@ def getSimilarDocs(prompt,embedding):
         "_source": {"exclude": ["embedding"]}
     }
 
-    lexical_results = osClient.search(index="helpdesk-index", body=lexical_query)
-    semantic_results = osClient.search(index="helpdesk-index", body=semantic_query)
+    lexical_results = osClient.search(index=config['opensearch_index'], body=lexical_query)
+    semantic_results = osClient.search(index=config['opensearch_index'], body=semantic_query)
 
     hybrid_results = hybrid_search(20, lexical_results, semantic_results, interpolation_weight=0.5, normalizer="minmax", use_rrf=False)
     

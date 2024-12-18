@@ -4,15 +4,15 @@ import json
 import re
 from os_query import getSimilarDocs
 from streamlit_star_rating import st_star_rating
-from search_utils import embed
 import tiktoken
 import ast
 from llm_utils import *
+from search_utils import embed
 from datetime import datetime
-import csv
 import os
 import logging
 import yaml
+from logging_config import log_chat, save_results
 
 # Load Config
 with open('config.yaml', 'r') as file:
@@ -25,7 +25,6 @@ SONNET_OUTPUT_COST_PER_TOKEN = 0.000015
 HAIKU_INPUT_COST_PER_TOKEN = 0.00000025
 HAIKU_OUTPUT_COST_PER_TOKEN = 0.00000125
 
-
 helpdesk_list = [
     "IT Helpdesk",
     "Farm Service Agency Helpdesk",
@@ -37,37 +36,6 @@ helpdesk_info = [
     "Farm Service Agency Helpdesk - The Farm Service Agency implements agricultural policy, administers credit and loan programs, and manages conservation, commodity, disaster and farm marketing programs through a national network of offices.",
     "Forest Service Helpdesk - FS sustains the health, diversity and productivity of the Nation's forests and grasslands to meet the needs of present and future generations."
 ]
-
-
-
-
-# Set up logging
-LOG_FILE = "chat_log.log"
-
-# Create or append to the log file
-if not os.path.exists(LOG_FILE):
-    with open(LOG_FILE, "w"):
-        pass
-
-logging.basicConfig(
-    filename=LOG_FILE, 
-    level=logging.INFO, 
-    format="%(asctime)s - %(message)s", 
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
-
-logging.getLogger('boto3').setLevel(logging.CRITICAL)
-logging.getLogger('boto3').propagate = False
-logging.getLogger('botocore').setLevel(logging.CRITICAL)
-logging.getLogger('botocore').propagate = False
-logging.getLogger('opensearch').setLevel(logging.CRITICAL)
-logging.getLogger('opensearch').propagate = False
-
-def log_chat(chat):
-    role = chat.get("role", "unknown")
-    content = chat.get("content", "")
-    logging.info(f"{role}: {content}")
-
 
 def sessionStateInit():
     if "currentHelpdesk" not in st.session_state:
@@ -209,6 +177,46 @@ def sessionStateInit():
     if "stepStyle" not in st.session_state:
         st.session_state.stepStyle = ""
 
+def reset_session():
+    keys_to_delete = list(st.session_state.keys())
+    for key in keys_to_delete:
+        del st.session_state[key]
+    st.rerun()
+
+def get_feedback():
+    if st.button("New Chat"):
+        reset_session()
+    st.session_state.stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
+    st.session_state.feedback = st.text_input("Give me some quick feedback!")
+    
+    convo = ""
+    for message in st.session_state.messages:
+        if message['role'] != "Administrator":
+            convo += f"{message} \n"
+    if len(st.session_state.pills) == 0:
+        st.session_state.pills = generate_tags(st, f"{str(convo)}")
+    actualTagList = ast.literal_eval(st.session_state.pills)
+
+    selected_category = st.pills("Select one or more categories that best match your issue:", options=actualTagList,selection_mode="multi")
+
+    if st.button("Complete"):
+        if st.session_state.stars == 5:
+            st.balloons()
+        st.write(f"""Selected Category: {selected_category}   \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
+                    {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
+                    {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}
+                    \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.flagRaiserCost, 4)}""")
+        save_results(st)
+
+def filter_and_write_message(prompt):
+    if profanity_check(prompt):
+        prompt = "The user has entered profanity."
+    chat = {"role": "user", "content": prompt}
+    st.session_state.messages.append(chat)
+    log_chat(chat)
+
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
 def main():
     # hide top bar
@@ -242,13 +250,6 @@ def main():
             return ":large_green_circle:"
         else:
             return ":red_circle:"
-
-
-    def reset_session():
-        keys_to_delete = list(st.session_state.keys())
-        for key in keys_to_delete:
-            del st.session_state[key]
-        st.rerun()
 
 
 
@@ -309,7 +310,6 @@ def main():
         if st.session_state.diagnoseMode:
             simulated_user_input = "Let's get started."
             passage = st.session_state.selectedIssue['_source']['passage']
-            # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
             invokeModel(simulated_user_input, st, f"{st.session_state.issueSolvePrompt} [{passage}]")
             
             st.session_state.messages.append({"role": "Administrator", "content": f"{st.session_state.issueSolvePrompt} [{passage}]"})
@@ -323,102 +323,30 @@ def main():
 
     if st.session_state.chooseStepStyleMode:
         if prompt := st.chat_input('Choose a step style.'):
-            if profanity_check(prompt):
-                prompt = "The user has entered profanity."
-            chat = {"role": "user", "content": prompt}
-            st.session_state.messages.append(chat)
-            log_chat(chat)
-
-            with st.chat_message("user"):
-                st.markdown(prompt)
+            filter_and_write_message(prompt)
             invokeModel(prompt, st)
 
     elif st.session_state.diagnoseMode:
         if prompt := st.chat_input(f"How can I help you with your issue: {st.session_state.selectedIssue['_source']['guide_title']}?"):
-
-            if profanity_check(prompt):
-                prompt = "The user has entered profanity."
-            chat = {"role": "user", "content": prompt}
-            st.session_state.messages.append(chat)
-            log_chat(chat)
-
-            with st.chat_message("user"):
-                st.markdown(prompt)
+            filter_and_write_message(prompt)
             passage = st.session_state.selectedIssue['_source']['passage']
-            # print(f"\n\n{f"{st.session_state.issueSolvePrompt} [{passage}]"}\n\n\n")
             invokeModel(prompt, st, f"[{passage}]")
 
     elif st.session_state.issueResolved:
-        if st.button("New Chat"):
-            reset_session()
-        st.session_state.stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
-        
-        st.session_state.feedback = st.text_input("Give me some quick feedback!")
-        convo = ""
-        for message in st.session_state.messages:
-            if message['role'] != "Administrator":
-                convo += f"{message} \n"
-        if len(st.session_state.pills) == 0:
-            st.session_state.pills = generate_tags(st, f"{str(convo)}")
-        actualTagList = ast.literal_eval(st.session_state.pills)
-
-        selected_category = st.pills("Select one or more categories that best match your issue:", options=actualTagList,selection_mode="multi")
-
-
-        if st.button("Complete"):
-            if st.session_state.stars == 5:
-                st.balloons()
-            st.write(f"""Selected Category: {selected_category}   \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
-                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
-                     {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}
-                     \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.flagRaiserCost, 4)}""")
-            save_results()
+        get_feedback()
 
     elif st.session_state.humanRedirect:
         if st.session_state.tooHighCost:
             st.error('This conversation is not going anywhere, redirecting you to a help desk associate.',icon="🚨")
-        st.session_state.stars = st_star_rating(label = "Please rate your experience", maxValue = 5, defaultValue = 3, key = "rating", emoticons = False)
-
-        st.session_state.feedback = st.text_input("Give me some quick feedback!")
-        convo = ""
-        for message in st.session_state.messages:
-            if message['role'] != "Administrator":
-                convo += f"{message} \n"
-        if len(st.session_state.pills) == 0:
-            st.session_state.pills = generate_tags(st, f"{str(convo)}")
-        actualTagList = ast.literal_eval(st.session_state.pills)
-
-        selected_category = st.pills("Select a category:", options=actualTagList,selection_mode="multi")
-
-
-        if st.button("Complete"):
-            if st.session_state.stars == 5:
-                st.balloons()
-            with st.spinner("Generating Summary..."):
-                summary = generate_summary(f"{str(convo)} *** The user also gave this feedback {st.session_state.feedback} and this star rating {st.session_state.stars} ***")
-            st.write(f"""Selected Category: {selected_category} \n\n To the helpdesk:  \n{summary}  \n  \nInput Tokens: {st.session_state.input_tokens}  \nOutput Tokens: 
-                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \n\nSummary Input Tokens: 
-                     {st.session_state.inputSummaryTokens}  \nSummary Output Tokens: {st.session_state.outputSummaryTokens}  \nSummary Total Cost: \${round(st.session_state.summaryCost, 4)}
-                         \nFlag Check Input Tokens: 
-                     {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}  
-                     \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.summaryCost + st.session_state.flagRaiserCost, 4)}
-                     """)
-            save_results()
-
+        get_feedback()
 
     elif st.session_state.no_similar_issues:
         st.write(f"""There were no similar help desk issue
              documents found. Redirecting you to a help desk associate.""")
     else:
         if prompt := st.chat_input('How can I help you today?'):
-            if profanity_check(prompt):
-                prompt = "The user has entered profanity."
-            chat = {"role": "user", "content": prompt}
-            st.session_state.messages.append(chat)
-            log_chat(chat)
 
-            with st.chat_message("user"):
-                st.markdown(prompt)
+            filter_and_write_message(prompt)
 
             if not st.session_state.selectedIssue:
                 st.session_state.input_tokens += len(tokenizer.encode(prompt))
@@ -439,30 +367,6 @@ def main():
                         st.write(f"Redirecting to the {helpdesk}. {reasoning}")
                 else:
                     invokeModel(prompt, st)
-
-def findRelevantIssue(prompt):
-    embedding = embed(prompt)
-    selectedDocs = getSimilarDocs(prompt,embedding)
-    if len(selectedDocs) == 0:
-        noSimilarIssues()
-        return
-    else:    
-        filteredIssues = filter_docs(selectedDocs)
-    if len(filteredIssues) == 0:
-        noSimilarIssues()
-        return
-    elif len(filteredIssues) == 1:
-        diagnoseIssue(filteredIssues[0])
-        return
-    else:
-        st.write("Select the issue that most closely matches your query.")
-        for idx, result in enumerate(filteredIssues):
-            st.button(
-                f"Title: {result['_source']['guide_title']}, Score: {result['_score']}",
-                key=f"issue_button_{idx}",
-                on_click=diagnoseIssue,
-                args=(result,)
-            )
 
 def filter_docs(results, min_score=0.7, relative_threshold=0.1):
     # Filter out documents below the absolute score threshold
@@ -490,106 +394,155 @@ def filter_docs(results, min_score=0.7, relative_threshold=0.1):
     return final_results
 
 
-def noSimilarIssues():
-    st.session_state.no_similar_issues = True
-    st.rerun()
-
-
-def diagnoseIssue(issue):
-    st.session_state.selectedIssue = issue
-    st.rerun()
-
 def setDiagnoseMode():
     st.session_state.diagnoseMode = True
     st.session_state.first_interaction = True 
     st.rerun()
 
-def generate_summary(document_text):
-    role_to_assume = 'aws_account_arn'    
+def noSimilarIssues():
+    st.session_state.no_similar_issues = True
+    st.rerun()
 
-    prompt = """
-    Summarize key points of the above conversation. The summary should include a 
-    description of the issue and how the issue was handled. Be concise.
-    """
+def diagnoseIssue(issue):
+    st.session_state.selectedIssue = issue
+    st.rerun()
 
-    prompt += document_text
+def findRelevantIssue(prompt):
+    embedding = embed(prompt)
+    selectedDocs = getSimilarDocs(prompt, embedding)
+    if len(selectedDocs) == 0:
+        noSimilarIssues()
+        return
+    else:    
+        filteredIssues = filter_docs(selectedDocs)
+    if len(filteredIssues) == 0:
+        noSimilarIssues()
+        return
+    elif len(filteredIssues) == 1:
+        diagnoseIssue(filteredIssues[0])
+        return
+    else:
+        st.write("Select the issue that most closely matches your query.")
+        for idx, result in enumerate(filteredIssues):
+            st.button(
+                f"Title: {result['_source']['guide_title']}, Score: {result['_score']}",
+                key=f"issue_button_{idx}",
+                on_click=diagnoseIssue,
+                args=(result,)
+            )
 
+def invokeModel(prompt, st, extraInstructions=""):
     bedrock_session = boto3.session.Session()
-    bedrock = bedrock_session.client("bedrock-runtime", region_name=config['region'])
+    client = bedrock_session.client("bedrock-runtime", region_name=config['region'])
+    model_id = config['model']['chat']
 
-    body = json.dumps({
-    "max_tokens": 1024,
-    "messages": [{"role": "user", "content": prompt}],
-    "anthropic_version": "bedrock-2023-05-31"
-    })
+    chatHistory = ""
+    for m in st.session_state.messages:
+        chatHistory += f"{m['role']} : {m['content']}\n"
 
-    tokens = len(tokenizer.encode(body))
-    st.session_state.inputSummaryTokens += tokens
+    adminContent = [{"type": "text", "text": f"{extraInstructions} \n Chat History: {chatHistory}"}]
+    userContent = [{"type": "text", "text": f"{prompt}"}]
 
-    response = bedrock.invoke_model(body=body, modelId=config['model']['summary'])
+    native_request = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 1000,
+        "temperature": 0.7,
+        "amazon-bedrock-guardrailConfig": {
+            "streamProcessingMode": "ASYNCHRONOUS"
+        },
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Administrator: {adminContent} User: {userContent} Assistant:"
+            },
+        ],
+    }
+    
+    request = json.dumps(native_request)
+    tokens = len(tokenizer.encode(request))
+    st.session_state.input_tokens += tokens
 
-    response_body = json.loads(response.get("body").read())
-    text = response_body.get("content")[0].get("text")
-    tokens = len(tokenizer.encode(text))
-    st.session_state.outputSummaryTokens += tokens
-    st.session_state.summaryCost += (
-        st.session_state.inputSummaryTokens * HAIKU_INPUT_COST_PER_TOKEN + 
-        st.session_state.outputSummaryTokens * HAIKU_OUTPUT_COST_PER_TOKEN
+    streaming_response = client.invoke_model_with_response_stream(
+        modelId=model_id, 
+        body=request,
+        guardrailIdentifier=config['guardrail_id'],
+        guardrailVersion=config['guardrail_version']
     )
-    return text
 
-def save_results():
-    end_reason = "Not resolved"
-    if st.session_state.humanRedirect:
-        end_reason = "Human Redirect"
-    elif st.session_state.issueResolved:
-        end_reason = "Issue Resolved"
-    elif st.session_state.tooHighCost:
-        end_reason = "Max Cost Exceeded"
+    # Generator function to yield text chunks for `st.write_stream`
+    def generate_response():
+        full_response = ""
+        show_text = True
+        for event in streaming_response["body"]:
+            chunk = json.loads(event["chunk"]["bytes"].decode('utf-8'))
+            if chunk["type"] == "content_block_delta":
+                text_delta = chunk["delta"].get("text", "")
+                full_response += text_delta
+                    
+                if show_text:
+                    yield text_delta  # Yielding for streaming
 
-    end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    step_style = "Complete Guide" if st.session_state.stepStyle == "g" else "Individual Steps"
+        chat = {"role": "assistant", "content": full_response}
+        st.session_state.messages.append(chat)
+        log_chat(chat)
 
-    headers = ["Categories", "Conversation", "Total Cost", "Input Tokens",
-               "Output Tokens", "Feedback", "Stars", "End Reason", "Start Time", "End Time", "Step Style"]
+        if "Identified the issue -" in full_response:
+            st.session_state.issueFound = True
+            st.session_state.first_interaction = True
+            st.session_state.chooseStepStyleMode = True
+            findRelevantIssue(prompt)
 
-    messages = [entry for entry in st.session_state.messages if entry.get("role") != "Administrator"]
+        if "Got it - multiple steps." in full_response:
+            st.session_state.stepStyle = 'm'
+            st.session_state.chooseStepStyleMode = False
+            setDiagnoseMode()
 
-    data = [
-        st.session_state.pills,
-        str(messages),
-        ("$" + str(st.session_state.total_cost)),
-        st.session_state.input_tokens,
-        st.session_state.output_tokens,
-        st.session_state.feedback,
-        str(st.session_state.stars),
-        end_reason,
-        str(st.session_state.start_time),
-        str(end_time),
-        step_style
-    ]
+        if "Got it - comprehensive guide." in full_response:
+            st.session_state.stepStyle = 'g'
+            st.session_state.chooseStepStyleMode = False
+            setDiagnoseMode()
 
-    # Output file
-    output_file = "saved_chats.csv"
+    with st.chat_message("assistant", avatar="usda-social-profile-round.png"):
+        st.write_stream(generate_response())
+    
+    fullResponse = st.session_state.messages[-1]['content']
 
-    # Check if the file exists
-    file_exists = os.path.exists(output_file)
+    if st.session_state.diagnoseMode:
+        flag = flagRaiser(prompt, fullResponse, st)
 
-    # Open the file in append mode
-    with open(output_file, mode="a", newline="") as file:
-        writer = csv.writer(file)
-        # If file does not exist, write the headers first
-        if not file_exists:
-            writer.writerow(headers)
-        # Append the data
-        writer.writerow(data)
+        print(f"\n{flag=}")
 
-    print(f"Data saved to CSV file at: {output_file}")
+        if "innapropriate" in flag:
+            st.toast('Please refrain from profanity usage', icon="👮")
 
+        if "Issue Resolved" in flag:
+            st.session_state.diagnoseMode = False
+            st.session_state.issueResolved = True
+            st.session_state.first_interaction = False
+            st.rerun()
+        
+        if "Human request" in flag:
+            st.session_state.redirectRequests += 1
+            if st.session_state.redirectRequests >= st.session_state.humanRedirectThreshold:
+                st.session_state.diagnoseMode = False
+                st.session_state.humanRedirect = True
+                st.session_state.first_interaction = False
+            st.rerun()
 
+        if "Redirect request" in flag:
+            st.session_state.diagnoseMode = False
+            st.session_state.humanRedirect = True
+            st.session_state.first_interaction = False
+            st.rerun()
 
+    
+    tokens = len(tokenizer.encode(fullResponse))
+    st.session_state.output_tokens += tokens
 
-
+    st.session_state.total_cost += (
+        st.session_state.input_tokens * SONNET_INPUT_COST_PER_TOKEN + 
+        st.session_state.output_tokens * SONNET_OUTPUT_COST_PER_TOKEN
+    )
 
 if __name__ == "__main__":
     main()
