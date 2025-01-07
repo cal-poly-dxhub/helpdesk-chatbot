@@ -206,6 +206,9 @@ def get_feedback():
                     {st.session_state.output_tokens}  \nConversation Total Cost: \${round(st.session_state.total_cost, 4)}  \nFlag Check Input Tokens: 
                     {st.session_state.inputFlagTokens}  \nFlag Check Output Tokens: {st.session_state.outputFlagTokens}  \nFlag Check Total Cost: \${round(st.session_state.flagRaiserCost, 4)}
                     \nTotal Cost: \${round(st.session_state.total_cost + st.session_state.flagRaiserCost, 4)}""")
+        with st.spinner("Generating Summary..."):
+            summary = generate_summary(st, f"{str(convo)} *** The user also gave this feedback {st.session_state.feedback} and this star rating {st.session_state.stars} ***")
+            st.write(f"""To the helpdesk:  \n{summary}""")
         save_results(st)
 
 def filter_and_write_message(prompt):
