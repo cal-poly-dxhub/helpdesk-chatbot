@@ -1,0 +1,31 @@
+opensearch_endpoint: <your-opensearch-endpoint>
+opensearch_index: <your-opensearch-index>
+
+# The Bedrock Model IDs for each function
+model:
+  chat: anthropic.claude-3-5-sonnet-20241022-v2:0
+  flag_raiser: anthropic.claude-3-sonnet-20240229-v1:0
+  summary: anthropic.claude-3-haiku-20240307-v1:0
+  category_generation: anthropic.claude-3-haiku-20240307-v1:0
+  redirect: anthropic.claude-3-haiku-20240307-v1:0
+  ingest: anthropic.claude-3-5-sonnet-20241022-v2:0
+  embedding: amazon.titan-embed-text-v2:0
+
+guardrail_id: <your-guardail-id>
+guardrail_version: <your-guardrail-version>
+region: <your-aws-region>
+
+
+cookie:
+  expiry_days: 30
+  key: <some-key-name> # Must be a string
+  name: <some-cookie-name>
+credentials:
+  usernames:
+    <your-username>:
+      email: <your-auth-email>
+      first_name: <your-name> # Optional
+      last_name: <your-lastname> # Optional
+      failed_login_attempts: 0 # Will be managed automatically
+      logged_in: False # Will be managed automatically
+      password: <your-password> # Will be hashed automatically
