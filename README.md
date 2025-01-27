@@ -119,6 +119,17 @@ Thanks for your interest in our solution.  Having specific examples of replicati
 
 - Set up and execute the OpenSearch CDK to initialize the environment.
 
+- Create a vector search index with a vector embedding following this format:
+    ```
+    Vector Field Name:    embedding
+    Engine:               nmslib
+    Precision:            FP32
+    Dimensions:           1024
+    Distance Type:        cosine
+    M:                    16
+    ef_construction:      512
+    ef_search:            512
+    ```
 
 ### 4. Upload Knowledge Articles
 - Locate the knowledge articles and upload them to the EC2 instance.
