@@ -139,34 +139,20 @@ amazon.titan-embed-text-v2:0
     cdk deploy --all
 
     ```
-### 4. Allow access to Bedrock Models
-- You will need to add access to a few [Bedrock models] (https://us-west-2.console.aws.amazon.com/bedrock/home)
 
-- Under Model Access -> Modify Model Access select the following models 
-```
-Amazon - Titan Text Embeddings V2
-
-Anthropic - Claude 3.5 Sonnet v2
-
-Anthropic - Claude 3.5 Sonnet
-
-Anthropic - Claude 3 Haiku
-```
-- These models correspond to what you list in config.yaml
-
-### 5. Upload Knowledge Articles
+### 4. Upload Knowledge Articles
 - Locate the knowledge articles and upload them to the EC2 instance.
 - Update line 9 of `data-ingest/main.py` to point to the exact path of the rawText part of document folder.
 
 - Example path: `/home/ec2-user/Knowledge_Articles`
 
-### 6. Create Bedrock Guardrail
+### 5. Create Bedrock Guardrail
 - Configure the Bedrock guardrail with the following settings:
   - **Content Filters**: Enable all prompt and response filters at medium strength.
   - **Sensitive Information PII Behavior**: Set to `mask`.
   - **Profanity Filter**: Ensure it is enabled.
 
-### 7. Configure Settings and run data import
+### 6. Configure Settings and run data import
 - Rename `example_config.yaml` to `config.yaml`:
   ```bash
   mv example_config.yaml config.yaml
@@ -182,7 +168,7 @@ Anthropic - Claude 3 Haiku
 
 Once the process completes you may now run the streamlit user interface application
 
-### 8. Run the streamlit app in the `chatbot` directory with
+### 7. Run the streamlit app in the `chatbot` directory with
 ```
 streamlit run chatbot.py
 ```
