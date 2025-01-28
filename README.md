@@ -76,8 +76,11 @@ amazon.titan-embed-text-v2:0
 ### 1. Deploy an EC2 Instance
 - Deploy an EC2 instance in your desired region and configure it as required (i.e grant a role with required managed polices).
 
-- Grant the EC2 administrator permissions through IAM console
+- CDK will require Administrator Permissions 
 
+- Normal operation will only require AmazonBedrockFullAccess, AmazonOpenSearchServiceFullAccess and perhaps AmazonS3FullAccess) 
+
+- Additional settings  t3.large and security group to allow SSH traffic and port 8501 for web access
 
 ### 2. Pull the Git Repository
 - Install git using this command 
@@ -116,57 +119,70 @@ amazon.titan-embed-text-v2:0
 
 - Create and activate venv and install requirements
     ```
-    python -m venv env
+    python3.11 -m venv env
 
     source env/bin/activate
+
+    cd helpdesk-chatbot
 
     pip3.11 install -r requirements.txt
     ```
 
 - CDK deploy 
     ```
+    cd cdk
+
     cdk synth
 
     cdk bootstrap
 
     cdk deploy --all
-    ```
 
-- Set up and execute the OpenSearch CDK to initialize the environment.
-
-- Create a vector search index with a vector embedding following this format:
     ```
-    Vector Field Name:    embedding
-    Engine:               nmslib
-    Precision:            FP32
-    Dimensions:           1024
-    Distance Type:        cosine
-    M:                    16
-    ef_construction:      512
-    ef_search:            512
-    ```
+### 4. Allow access to Bedrock Models
+- You will need to add access to a few [Bedrock models] (https://us-west-2.console.aws.amazon.com/bedrock/home)
 
-### 4. Upload Knowledge Articles
+- Under Model Access -> Modify Model Access select the following models 
+```
+Amazon - Titan Text Embeddings V2
+
+Anthropic - Claude 3.5 Sonnet v2
+
+Anthropic - Claude 3.5 Sonnet
+
+Anthropic - Claude 3 Haiku
+```
+- These models correspond to what you list in config.yaml
+
+### 5. Upload Knowledge Articles
 - Locate the knowledge articles and upload them to the EC2 instance.
 - Update line 9 of `data-ingest/main.py` to point to the exact path of the rawText part of document folder.
 
 - Example path: `/home/ec2-user/Knowledge_Articles`
 
-### 5. Create Bedrock Guardrail
+### 6. Create Bedrock Guardrail
 - Configure the Bedrock guardrail with the following settings:
   - **Content Filters**: Enable all prompt and response filters at medium strength.
   - **Sensitive Information PII Behavior**: Set to `mask`.
   - **Profanity Filter**: Ensure it is enabled.
 
-### 6. Configure Settings
+### 7. Configure Settings and run data import
 - Rename `example_config.yaml` to `config.yaml`:
   ```bash
   mv example_config.yaml config.yaml
   ```
 - Update the values in `config.yaml` with your specific information.
 
+- After data has been added to /home/ec2-user/Knowledge_Articles run data ingestion script
+```
+  cd /home/ec2-user/helpdesk-chatbot/data-ingest
 
-### 7. Run the streamlit app in the `chatbot` directory with
+  python main.py
+```
+
+Once the process completes you may now run the streamlit user interface application
+
+### 8. Run the streamlit app in the `chatbot` directory with
 ```
 streamlit run chatbot.py
 ```

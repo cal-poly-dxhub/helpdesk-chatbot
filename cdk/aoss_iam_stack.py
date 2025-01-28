@@ -18,14 +18,12 @@ class AOSSIamStack(Stack):
     #################################################################################
     # Lambda execution role for AOSS
     #################################################################################
-    aoss_role = iam.Role(self, "aoss-role",
-      assumed_by=iam.ServicePrincipal('lambda.amazonaws.com'),
+    aoss_role = iam.Role(self, "ec2-helpdesk-role",
+      assumed_by=iam.ServicePrincipal('ec2.amazonaws.com'),
       managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name('AmazonS3FullAccess'),
                 iam.ManagedPolicy.from_aws_managed_policy_name('AmazonBedrockFullAccess'),
                 iam.ManagedPolicy.from_aws_managed_policy_name('AmazonOpenSearchServiceFullAccess'),
-                # Add CloudWatch Logs permission for basic Lambda execution
-                iam.ManagedPolicy.from_aws_managed_policy_name('service-role/AWSLambdaBasicExecutionRole')
             ]
     )
 

@@ -1,5 +1,5 @@
 opensearch_endpoint: <your-opensearch-endpoint>
-opensearch_index: <your-opensearch-index>
+opensearch_index: helpdesk-index
 
 # The Bedrock Model IDs for each function
 model:
