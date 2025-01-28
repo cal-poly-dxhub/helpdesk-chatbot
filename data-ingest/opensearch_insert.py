@@ -7,7 +7,7 @@ import re
 import yaml
 
 # Load Config
-with open('config.yaml', 'r') as file:
+with open('../config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 def generate_report(document_text):
@@ -65,7 +65,7 @@ def insert_into_opensearch(document):
 def insert_document_os(text_data, guide_file_name):
     try:
         report = generate_report(text_data)
-    
+
         report_text = re.search(r'<report>(\s*{.*?}\s*)</report>', report, re.DOTALL).group(1)
         data = json.loads(report_text)
 

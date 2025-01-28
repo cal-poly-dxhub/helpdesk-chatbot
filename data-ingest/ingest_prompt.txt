@@ -1,5 +1,7 @@
 Based off the provided help desk article, create a report in the following format. 
 Copy the sections and steps exactly a they appear in the document.
+Use valid JSON and ensure that steps can be compiled.
+Make sure to wrap the JSON within <report></report> tags.
 
 <report>
 {{
