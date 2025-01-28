@@ -9,7 +9,7 @@ def list_objects_in_folder(folder_path):
 
 check_create_index()
 
-folder_path = "/home/ec2-user/Knowledge Articles/docx/rawText"
+folder_path = "/home/ec2-user/Knowledge_Articles/docx/rawText"
 document_paths = list_objects_in_folder(folder_path)
 
 for file in document_paths:

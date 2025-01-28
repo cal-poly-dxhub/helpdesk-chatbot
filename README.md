@@ -57,8 +57,26 @@ Thanks for your interest in our solution.  Having specific examples of replicati
 
 ## Steps to Deploy and Configure the System
 
+### Before We Get Started
+
+- Request and ensure model access within AWS Bedrock, specifically:
+    - Claude 3.5 Sonnet V2
+    - Claude 3
+    - Claude 3 Haiku
+    - Titan Embeddings
+
+The corresponding model IDs are:
+```
+anthropic.claude-3-5-sonnet-20241022-v2:0
+anthropic.claude-3-sonnet-20240229-v1:0
+anthropic.claude-3-haiku-20240307-v1:0
+amazon.titan-embed-text-v2:0
+```
+
 ### 1. Deploy an EC2 Instance
 - Deploy an EC2 instance in your desired region and configure it as required (i.e grant a role with required managed polices).
+
+- Grant the EC2 administrator permissions through IAM console
 
 
 ### 2. Pull the Git Repository
@@ -78,10 +96,7 @@ Thanks for your interest in our solution.  Having specific examples of replicati
     ```
     sudo yum install -y nodejs
     ```
-- Configure AWS Credentials
-    ```
-    aws configure
-    ```
+
 - Install cdk
     ```
     sudo npm install -g aws-cdk
@@ -135,7 +150,7 @@ Thanks for your interest in our solution.  Having specific examples of replicati
 - Locate the knowledge articles and upload them to the EC2 instance.
 - Update line 9 of `data-ingest/main.py` to point to the exact path of the rawText part of document folder.
 
-- Example path: `/home/ec2-user/Knowledge Articles`
+- Example path: `/home/ec2-user/Knowledge_Articles`
 
 ### 5. Create Bedrock Guardrail
 - Configure the Bedrock guardrail with the following settings:
