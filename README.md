@@ -170,6 +170,8 @@ Once the process completes you may now run the streamlit user interface applicat
 
 ### 7. Run the streamlit app in the `chatbot` directory with
 ```
+cd /home/ec2-user/helpdesk-chatbot/chatbot/
+
 streamlit run chatbot.py
 ```
 By following these steps, you will have a properly deployed and configured system with the desired settings.
