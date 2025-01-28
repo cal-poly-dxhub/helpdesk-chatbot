@@ -58,7 +58,7 @@ Thanks for your interest in our solution.  Having specific examples of replicati
 ## Steps to Deploy and Configure the System
 
 ### 1. Deploy an EC2 Instance
-- Deploy an EC2 instance in your desired region and configure it as required.
+- Deploy an EC2 instance in your desired region and configure it as required (i.e grant a role with required managed polices).
 
 
 ### 2. Pull the Git Repository
