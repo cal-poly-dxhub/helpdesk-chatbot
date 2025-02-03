@@ -5,6 +5,7 @@ from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
 from requests_aws4auth import AWS4Auth
 import re
 import yaml
+import time
 
 # Load Config
 with open('../config.yaml', 'r') as file:
@@ -63,8 +64,24 @@ def insert_into_opensearch(document):
     print(f"Inserted document: {document['guide_file_name']}")
 
 def insert_document_os(text_data, guide_file_name):
+    max_retries = 10
+    delay = 1
+
+    # Exponential backoff
+    for attempt in range(1, max_retries + 1):
+        try:
+            report = generate_report(text_data)
+            break
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"Attempt {attempt} for generate_report failed for {guide_file_name}: {e}. Retrying in {delay} seconds...")
+                time.sleep(delay)
+                delay *= 2
+            else:
+                print(f"Max retries reached for generate_report for {guide_file_name}. Aborting insertion.")
+                return
+
     try:
-        report = generate_report(text_data)
 
         report_text = re.search(r'<report>(\s*{.*?}\s*)</report>', report, re.DOTALL).group(1)
         data = json.loads(report_text)
