@@ -14,6 +14,8 @@ import logging
 from logging_config import log_chat, save_results
 import yaml
 
+
+
 # Load Config   
 with open('../config.yaml', 'r') as file:
     config = yaml.safe_load(file)
@@ -129,7 +131,7 @@ def sessionStateInit():
         st.session_state.no_similar_issues = False
 
     if "selectedIssue" not in st.session_state:
-        st.session_state.selectedIssue = ""
+        st.session_state.selectedIssue = {}
 
     if "diagnoseMode" not in st.session_state:
         st.session_state.diagnoseMode = False
@@ -258,7 +260,7 @@ def noSimilarIssues():
 
 def diagnoseIssue(issue):
     st.session_state.selectedIssue = issue
-    st.rerun()
+    #st.rerun()
 
 def findRelevantIssue(prompt):
     embedding = embed(prompt)
@@ -359,10 +361,9 @@ def invokeModel(prompt, st, extraInstructions=""):
             st.write_stream(generate_response())
         
         fullResponse = st.session_state.messages[-1]['content']
-
-        if st.session_state.diagnoseMode:
+        s = True
+        if s:   #originally was if st.session_state.diagnoseMode:
             flag = flagRaiser(prompt, fullResponse, st)
-
             print(f"\n{flag=}")
 
             if "innapropriate" in flag:
@@ -409,10 +410,8 @@ def main():
     }
     </style>
     """, unsafe_allow_html=True)
-
-
-    st.title("USDA Help Desk Chatbot")        
-
+    
+    st.title("USDA Help Desk Chatbot") 
     sessionStateInit()
     if st.session_state.stepStyle != "":
         if st.session_state.stepStyle == 'g':
@@ -488,10 +487,17 @@ def main():
         simulated_user_input = "Hi"
         if st.session_state.diagnoseMode:
             simulated_user_input = "Let's get started."
-            passage = st.session_state.selectedIssue['_source']['passage']
-            invokeModel(simulated_user_input, st, f"{st.session_state.issueSolvePrompt} [{passage}]")
+            if st.session_state.selectedIssue != {}:
+                passage = st.session_state.selectedIssue['_source']['passage']
+                invokeModel(simulated_user_input, st, f"{st.session_state.issueSolvePrompt} [{passage}]")
+            else:
+                passage = "No Issue selected. Try re-entering the prompt and selecting an issue."
+                st.write(passage)
+                st.session_state.diagnoseMode = False
+                st.session_state.first_interaction = True
             
-            st.session_state.messages.append({"role": "Administrator", "content": f"{st.session_state.issueSolvePrompt} [{passage}]"})
+            st.session_state.messages.append({"role": "Administrator", "content": passage})
+
         elif st.session_state.chooseStepStyleMode:
             simulated_user_input = "Ok"
             invokeModel(simulated_user_input, st, st.session_state.chooseStepStylePrompt)
