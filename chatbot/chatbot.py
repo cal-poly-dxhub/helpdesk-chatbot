@@ -54,6 +54,9 @@ def sessionStateInit():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
+    if "user_question" not in st.session_state:
+        st.session_state.user_question = []
+
     if "issueFound" not in st.session_state:
         st.session_state.issueFound = False
 
@@ -92,6 +95,7 @@ def sessionStateInit():
         #     st.session_state.issueSolvePrompt = issueSolvePromptFile.read()
         st.session_state.issueSolvePrompt = f"""
         You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA.
+        If the document is not relevant to the user question {st.session_state.user_question} use your general knowledge to provide an answer.
         Goal: Assist the user in resolving their issue by guiding them through the instructions outlined in the provided help desk issue document.
         Instructions:
         Walk the user through the issue they are having one step at a time.
@@ -101,6 +105,7 @@ def sessionStateInit():
 
         st.session_state.issueSolvePromptGuide = f"""
         You are a friendly and helpful {st.session_state.currentHelpdesk} assistant for the USDA.
+        If the document is not relevant to the user question {st.session_state.user_question} use your general knowledge to provide an answer.
         Goal: Assist the user in resolving their issue by guiding them through the instructions outlined in the provided help desk issue document.
         Instructions:
         Walk the user through the issue they are having by providing a guide of what to do that contains step by step instructions.
@@ -587,6 +592,7 @@ def main():
             )
 
         elif st.session_state.chooseStepStyleMode:
+            st.session_state.user_question = st.session_state.messages
             simulated_user_input = "Ok"
             invokeModel(
                 simulated_user_input, st, st.session_state.chooseStepStylePrompt
