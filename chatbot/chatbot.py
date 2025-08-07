@@ -289,6 +289,10 @@ def noSimilarIssues():
 
 def diagnoseIssue(issue):
     st.session_state.selectedIssue = issue
+
+
+def diagnoseIssueRerun(issue):
+    st.session_state.selectedIssue = issue
     st.rerun()
 
 
@@ -304,7 +308,7 @@ def findRelevantIssue(prompt):
         noSimilarIssues()
         return
     elif len(filteredIssues) == 1:
-        diagnoseIssue(filteredIssues[0])
+        diagnoseIssueRerun(filteredIssues[0])
         return
     else:
         st.write("Select the issue that most closely matches your query.")
