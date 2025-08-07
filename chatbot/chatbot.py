@@ -82,7 +82,7 @@ def sessionStateInit():
         Instructions:
         Respond in a friendly and concise manner to encourage the user to share what they need help with.
         After the User Mentions a Valid Issue:
-        Respond with the following message, inserting the user's issue where indicated:
+        Respond with the following message verbatim, do not say anythin else, inserting the user's issue where indicated:
         "Identified the issue - let's solve {{the user's issue}} right away."
         If a user ask a question unrelated to an issue or if the user
         asks a question that one of the relevant departments can't answer,
